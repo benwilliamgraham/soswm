@@ -103,6 +103,7 @@ void key_press(XKeyPressedEvent *e) {
 }
 
 void button_press(XButtonPressedEvent *e) {
+  XRaiseWindow(dpy, e->subwindow);
   XGetWindowAttributes(dpy, e->subwindow, &attr);
   start = *e;
 }
