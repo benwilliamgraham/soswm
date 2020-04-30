@@ -3,14 +3,33 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+/* -- Global variables and structures -- */
 Display *dpy;
 Window root;
 Atom WM_PROTOCOLS, WM_DELETE_WINDOW;
 
-/* temporary */
 XButtonEvent start;
 XWindowAttributes attr;
 
+typedef struct SWindow SWindow;
+struct SWindow {
+  Window win;
+  SWindow *prev, *next;
+};
+
+typedef struct SWorkspace SWorkspace;
+struct SWorkspace {
+  SWindow *win_stack;
+  SWorkspace *prev, *next;
+} * wksp_stack;
+
+typedef struct SScreen SScreen;
+struct SScreen {
+  Screen *scr;
+  SScreen *prev, *next;
+} * scr_stack;
+
+/* -- Utility functions -- */
 void launch(char **args) {
   pid_t pid = fork();
   if (!pid) {
@@ -41,14 +60,49 @@ Bool send_event(Window win, Atom proto) {
   return found;
 }
 
-void logout(__attribute__((unused)) XKeyPressedEvent *e) {
-  XCloseDisplay(dpy);
-  exit(0);
+int x_error(Display *dpy, XErrorEvent *err) {
+  char error_text[1024];
+  XGetErrorText(dpy, err->error_code, error_text, sizeof(error_text));
+  fprintf(stderr, "X error: %s\n", error_text);
+  return 0;
+}
+
+/* -- Window configuration -- */
+void configure_request(const XConfigureRequestEvent *e) {
+  XWindowChanges changes;
+  changes.x = e->x;
+  changes.y = e->y;
+  changes.width = e->width;
+  changes.height = e->height;
+  changes.border_width = e->border_width;
+  changes.sibling = e->above;
+  changes.stack_mode = e->detail;
+  XConfigureWindow(dpy, e->window, e->value_mask, &changes);
+}
+
+void map_request(XMapRequestEvent *e) { XMapWindow(dpy, e->window); }
+
+/* -- Keyboard interaction -- */
+void new_wksp(__attribute__((unused)) XKeyPressedEvent *e) {
+  /* if the top workspace is empty, do nothing */
+  if (wksp_stack->win_stack == NULL)
+    return;
+  SWorkspace *wksp = malloc(sizeof(SWorkspace));
+  wksp->win_stack = NULL;
+  wksp->prev = NULL;
+  wksp->next = wksp_stack;
+  wksp_stack->prev = wksp;
+  wksp_stack = wksp;
 }
 
 void quit(XKeyPressedEvent *e) {
   if (!send_event(e->subwindow, WM_DELETE_WINDOW))
     XKillClient(dpy, e->subwindow);
+}
+
+void logout(__attribute__((unused)) XKeyPressedEvent *e) {
+  XCloseDisplay(dpy);
+  exit(0);
 }
 
 void launcher(__attribute__((unused)) XKeyPressedEvent *e) {
@@ -67,33 +121,13 @@ struct {
   unsigned int mask, keysym, keycode;
   void (*handler)(XKeyPressedEvent *);
 } keybinds[] = {
+    {.mask = Mod4Mask, .keysym = XK_n, .handler = new_wksp},
     {.mask = Mod4Mask | ShiftMask, .keysym = XK_l, .handler = logout},
     {.mask = Mod4Mask | ShiftMask, .keysym = XK_q, .handler = quit},
     {.mask = Mod4Mask, .keysym = XK_space, .handler = launcher},
     {.mask = Mod4Mask, .keysym = XK_t, .handler = terminal},
     {.mask = Mod4Mask, .keysym = XK_e, .handler = editor}};
 const size_t NUM_KEYBINDS = sizeof(keybinds) / sizeof(*keybinds);
-
-int x_error(Display *dpy, XErrorEvent *err) {
-  char error_text[1024];
-  XGetErrorText(dpy, err->error_code, error_text, sizeof(error_text));
-  fprintf(stderr, "X error: %s\n", error_text);
-  return 0;
-}
-
-void configure_request(const XConfigureRequestEvent *e) {
-  XWindowChanges changes;
-  changes.x = e->x;
-  changes.y = e->y;
-  changes.width = e->width;
-  changes.height = e->height;
-  changes.border_width = e->border_width;
-  changes.sibling = e->above;
-  changes.stack_mode = e->detail;
-  XConfigureWindow(dpy, e->window, e->value_mask, &changes);
-}
-
-void map_request(XMapRequestEvent *e) { XMapWindow(dpy, e->window); }
 
 void key_press(XKeyPressedEvent *e) {
   for (size_t i = 0; i < NUM_KEYBINDS; i++) {
@@ -102,7 +136,9 @@ void key_press(XKeyPressedEvent *e) {
   }
 }
 
+/* -- Mouse interaction -- */
 void button_press(XButtonPressedEvent *e) {
+  XSetInputFocus(dpy, e->subwindow, RevertToNone, CurrentTime);
   XRaiseWindow(dpy, e->subwindow);
   XGetWindowAttributes(dpy, e->subwindow, &attr);
   start = *e;
@@ -113,6 +149,7 @@ void motion_notify(XMotionEvent *e) {
               attr.y + e->y_root - start.y_root);
 }
 
+/* -- Main loop -- */
 int main() {
   /* initialize display */
   if (!(dpy = XOpenDisplay(0x0))) {
@@ -122,6 +159,26 @@ int main() {
   root = DefaultRootWindow(dpy);
   XSetErrorHandler(x_error);
   XSelectInput(dpy, root, SubstructureNotifyMask | SubstructureRedirectMask);
+
+  /* gather screens */
+  int num_screens = XScreenCount(dpy);
+  fprintf(stderr, "%d screens\n", num_screens);
+  SScreen *scr = scr_stack, *prev = NULL;
+  for (int i = 0; i < num_screens; i++) {
+    scr = malloc(sizeof(SScreen));
+    scr->scr = XScreenOfDisplay(dpy, i);
+    scr->prev = prev;
+    scr->next = NULL;
+    if (prev != NULL)
+      prev->next = scr;
+    prev = scr;
+  }
+
+  /* create initial workspace */
+  wksp_stack = malloc(sizeof(SWorkspace));
+  wksp_stack->win_stack = NULL;
+  wksp_stack->prev = NULL;
+  wksp_stack->next = NULL;
 
   /* initialize communication protocols */
   WM_PROTOCOLS = XInternAtom(dpy, "WM_PROTOCOLS", False);
