@@ -1,3 +1,4 @@
+#include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <stdio.h>
@@ -61,6 +62,7 @@ Bool send_event(Window win, Atom proto) {
 }
 
 int x_error(Display *dpy, XErrorEvent *err) {
+  printf("ERROR\n");
   char error_text[1024];
   XGetErrorText(dpy, err->error_code, error_text, sizeof(error_text));
   fprintf(stderr, "X error: %s\n", error_text);
@@ -68,10 +70,12 @@ int x_error(Display *dpy, XErrorEvent *err) {
 }
 
 /* -- Window configuration -- */
-Bool find_window(Window win, SWorkspace *wksp_loc, SWindow *win_loc) {
-  for (wksp_loc = wksp_stack; wksp_loc; wksp_loc = wksp_loc->next) {
-    for (win_loc = wksp_loc->win_stack; win_loc; win_loc = win_loc->next) {
-      if (win_loc->win == win)
+Bool find_window(Window win, SWorkspace **wksp_loc, SWindow **win_loc) {
+  printf("FINDING\n");
+  for (*wksp_loc = wksp_stack; *wksp_loc; *wksp_loc = (*wksp_loc)->next) {
+    for (*win_loc = (*wksp_loc)->win_stack; *win_loc;
+         *win_loc = (*win_loc)->next) {
+      if ((*win_loc)->win == win)
         return True;
     }
   }
@@ -79,11 +83,14 @@ Bool find_window(Window win, SWorkspace *wksp_loc, SWindow *win_loc) {
 }
 
 void update_windows(SWorkspace *wksp) {
+  printf("UPDATING, %ld\n", wksp->num_wins);
   SMonitor *mon = mon_stack;
   if (wksp->num_wins == 1) {
+    XSetInputFocus(dpy, wksp->win_stack->win, RevertToNone, CurrentTime);
     XMoveResizeWindow(dpy, wksp->win_stack->win, mon->x, mon->y, mon->w,
                       mon->h);
   } else if (wksp->num_wins) {
+    XSetInputFocus(dpy, wksp->win_stack->win, RevertToNone, CurrentTime);
     XMoveResizeWindow(dpy, wksp->win_stack->win, mon->x, mon->y, mon->w / 2,
                       mon->h);
     size_t i = 0;
@@ -96,6 +103,7 @@ void update_windows(SWorkspace *wksp) {
 }
 
 void configure_request(const XConfigureRequestEvent *e) {
+  printf("CONFIG\n");
   /* configure window normally; TODO update this */
   XWindowChanges changes;
   changes.x = e->x;
@@ -109,6 +117,7 @@ void configure_request(const XConfigureRequestEvent *e) {
 }
 
 void map_request(XMapRequestEvent *e) {
+  printf("MAP\n");
   /* push the new window */
   SWindow *new = malloc(sizeof(SWindow));
   new->win = e->window;
@@ -125,13 +134,17 @@ void map_request(XMapRequestEvent *e) {
 }
 
 void destroy_notify(XDestroyWindowEvent *e) {
+  printf("DESTROY\n");
   SWorkspace *wksp = NULL;
   SWindow *win = NULL;
-  find_window(e->window, wksp, win);
+  if (!find_window(e->window, &wksp, &win))
+    return;
   if (win->prev)
-    win->prev = win->next;
+    win->prev->next = win->next;
   if (win->next)
-    win->next = win->prev;
+    win->next->prev = win->prev;
+  if (wksp->win_stack == win)
+    wksp->win_stack = win->next;
   free(win);
   wksp->num_wins--;
 
@@ -178,12 +191,12 @@ struct {
   unsigned int mask, keysym, keycode;
   void (*handler)(XKeyPressedEvent *);
 } keybinds[] = {
-    {.mask = Mod4Mask, .keysym = XK_n, .handler = new_wksp},
-    {.mask = Mod4Mask | ShiftMask, .keysym = XK_l, .handler = logout},
-    {.mask = Mod4Mask | ShiftMask, .keysym = XK_q, .handler = quit},
-    {.mask = Mod4Mask, .keysym = XK_space, .handler = launcher},
-    {.mask = Mod4Mask, .keysym = XK_t, .handler = terminal},
-    {.mask = Mod4Mask, .keysym = XK_e, .handler = editor}};
+    {.mask = Mod1Mask, .keysym = XK_n, .handler = new_wksp},
+    {.mask = Mod1Mask | ShiftMask, .keysym = XK_l, .handler = logout},
+    {.mask = Mod1Mask | ShiftMask, .keysym = XK_q, .handler = quit},
+    {.mask = Mod1Mask, .keysym = XK_space, .handler = launcher},
+    {.mask = ShiftMask, .keysym = XK_t, .handler = terminal},
+    {.mask = Mod1Mask, .keysym = XK_e, .handler = editor}};
 const size_t NUM_KEYBINDS = sizeof(keybinds) / sizeof(*keybinds);
 
 void key_press(XKeyPressedEvent *e) {
@@ -194,9 +207,9 @@ void key_press(XKeyPressedEvent *e) {
 }
 
 /* -- Mouse interaction -- */
-void button_press(XButtonPressedEvent *e) {}
+void button_press(__attribute__((unused)) XButtonPressedEvent *e) {}
 
-void motion_notify(XMotionEvent *e) {}
+void motion_notify(__attribute__((unused)) XMotionEvent *e) {}
 
 /* -- Main loop -- */
 int main() {
@@ -220,7 +233,7 @@ int main() {
   mon_stack->next->next = NULL;
   mon_stack->w = mon_stack->next->w = 1920;
   mon_stack->h = mon_stack->next->h = 1080;
-  mon_stack->x = 1920;
+  mon_stack->x = 0;
   mon_stack->y = mon_stack->next->x = mon_stack->next->y = 0;
 
   /* create initial workspace */
@@ -242,10 +255,7 @@ int main() {
   }
 
   /* bind buttons */
-  XGrabButton(dpy, 1, Mod4Mask, root, True,
-              ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-              GrabModeAsync, GrabModeAsync, None, None);
-  XGrabButton(dpy, 3, Mod4Mask, root, True,
+  XGrabButton(dpy, 1, NoEventMask, root, True,
               ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
               GrabModeAsync, GrabModeAsync, None, None);
 
@@ -254,6 +264,7 @@ int main() {
                     "/home/benwilliamgraham/Pictures/mountain.jpg", NULL});
 
   /* main loop */
+  XSync(dpy, False);
   for (;;) {
     XEvent e[1];
     XNextEvent(dpy, e);
