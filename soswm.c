@@ -1,3 +1,4 @@
+#include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -5,11 +6,9 @@
 
 /* -- Global variables and structures -- */
 Display *dpy;
+Screen *scr;
 Window root;
 Atom WM_PROTOCOLS, WM_DELETE_WINDOW;
-
-XButtonEvent start;
-XWindowAttributes attr;
 
 typedef struct SWindow SWindow;
 struct SWindow {
@@ -20,14 +19,15 @@ struct SWindow {
 typedef struct SWorkspace SWorkspace;
 struct SWorkspace {
   SWindow *win_stack;
+  size_t num_wins;
   SWorkspace *prev, *next;
 } * wksp_stack;
 
-typedef struct SScreen SScreen;
-struct SScreen {
-  Screen *scr;
-  SScreen *prev, *next;
-} * scr_stack;
+typedef struct SMonitor SMonitor;
+struct SMonitor {
+  unsigned int w, h, x, y;
+  SMonitor *prev, *next;
+} * mon_stack;
 
 /* -- Utility functions -- */
 void launch(char **args) {
@@ -68,7 +68,35 @@ int x_error(Display *dpy, XErrorEvent *err) {
 }
 
 /* -- Window configuration -- */
+Bool find_window(Window win, SWorkspace *wksp_loc, SWindow *win_loc) {
+  for (wksp_loc = wksp_stack; wksp_loc; wksp_loc = wksp_loc->next) {
+    for (win_loc = wksp_loc->win_stack; win_loc; win_loc = win_loc->next) {
+      if (win_loc->win == win)
+        return True;
+    }
+  }
+  return False;
+}
+
+void update_windows(SWorkspace *wksp) {
+  SMonitor *mon = mon_stack;
+  if (wksp->num_wins == 1) {
+    XMoveResizeWindow(dpy, wksp->win_stack->win, mon->x, mon->y, mon->w,
+                      mon->h);
+  } else if (wksp->num_wins) {
+    XMoveResizeWindow(dpy, wksp->win_stack->win, mon->x, mon->y, mon->w / 2,
+                      mon->h);
+    size_t i = 0;
+    for (SWindow *win = wksp->win_stack->next; win; win = win->next, i++) {
+      XMoveResizeWindow(dpy, win->win, mon->x + mon->w / 2,
+                        mon->h * i / (wksp->num_wins - 1), mon->w / 2,
+                        mon->h / (wksp->num_wins - 1));
+    }
+  }
+}
+
 void configure_request(const XConfigureRequestEvent *e) {
+  /* configure window normally; TODO update this */
   XWindowChanges changes;
   changes.x = e->x;
   changes.y = e->y;
@@ -80,12 +108,41 @@ void configure_request(const XConfigureRequestEvent *e) {
   XConfigureWindow(dpy, e->window, e->value_mask, &changes);
 }
 
-void map_request(XMapRequestEvent *e) { XMapWindow(dpy, e->window); }
+void map_request(XMapRequestEvent *e) {
+  /* push the new window */
+  SWindow *new = malloc(sizeof(SWindow));
+  new->win = e->window;
+  new->prev = NULL;
+  new->next = wksp_stack->win_stack;
+  if (wksp_stack->win_stack)
+    wksp_stack->win_stack->prev = new;
+  wksp_stack->win_stack = new;
+  wksp_stack->num_wins++;
+  update_windows(wksp_stack);
+
+  /* draw updated window */
+  XMapWindow(dpy, e->window);
+}
+
+void destroy_notify(XDestroyWindowEvent *e) {
+  SWorkspace *wksp = NULL;
+  SWindow *win = NULL;
+  find_window(e->window, wksp, win);
+  if (win->prev)
+    win->prev = win->next;
+  if (win->next)
+    win->next = win->prev;
+  free(win);
+  wksp->num_wins--;
+
+  /* TODO ensure window is visible before redrawing */
+  update_windows(wksp);
+}
 
 /* -- Keyboard interaction -- */
 void new_wksp(__attribute__((unused)) XKeyPressedEvent *e) {
   /* if the top workspace is empty, do nothing */
-  if (wksp_stack->win_stack == NULL)
+  if (!wksp_stack->win_stack)
     return;
   SWorkspace *wksp = malloc(sizeof(SWorkspace));
   wksp->win_stack = NULL;
@@ -96,7 +153,7 @@ void new_wksp(__attribute__((unused)) XKeyPressedEvent *e) {
 }
 
 void quit(XKeyPressedEvent *e) {
-  if (!send_event(e->subwindow, WM_DELETE_WINDOW))
+  if (e->subwindow != None && !send_event(e->subwindow, WM_DELETE_WINDOW))
     XKillClient(dpy, e->subwindow);
 }
 
@@ -137,17 +194,9 @@ void key_press(XKeyPressedEvent *e) {
 }
 
 /* -- Mouse interaction -- */
-void button_press(XButtonPressedEvent *e) {
-  XSetInputFocus(dpy, e->subwindow, RevertToNone, CurrentTime);
-  XRaiseWindow(dpy, e->subwindow);
-  XGetWindowAttributes(dpy, e->subwindow, &attr);
-  start = *e;
-}
+void button_press(XButtonPressedEvent *e) {}
 
-void motion_notify(XMotionEvent *e) {
-  XMoveWindow(dpy, e->subwindow, attr.x + e->x_root - start.x_root,
-              attr.y + e->y_root - start.y_root);
-}
+void motion_notify(XMotionEvent *e) {}
 
 /* -- Main loop -- */
 int main() {
@@ -160,23 +209,24 @@ int main() {
   XSetErrorHandler(x_error);
   XSelectInput(dpy, root, SubstructureNotifyMask | SubstructureRedirectMask);
 
-  /* gather screens */
-  int num_screens = XScreenCount(dpy);
-  fprintf(stderr, "%d screens\n", num_screens);
-  SScreen *scr = scr_stack, *prev = NULL;
-  for (int i = 0; i < num_screens; i++) {
-    scr = malloc(sizeof(SScreen));
-    scr->scr = XScreenOfDisplay(dpy, i);
-    scr->prev = prev;
-    scr->next = NULL;
-    if (prev != NULL)
-      prev->next = scr;
-    prev = scr;
-  }
+  /* get screen */
+  scr = XDefaultScreenOfDisplay(dpy);
+
+  /* gather monitors; TODO actually determine this */
+  mon_stack = malloc(sizeof(SMonitor));
+  mon_stack->prev = NULL;
+  mon_stack->next = malloc(sizeof(SMonitor));
+  mon_stack->next->prev = mon_stack;
+  mon_stack->next->next = NULL;
+  mon_stack->w = mon_stack->next->w = 1920;
+  mon_stack->h = mon_stack->next->h = 1080;
+  mon_stack->x = 1920;
+  mon_stack->y = mon_stack->next->x = mon_stack->next->y = 0;
 
   /* create initial workspace */
   wksp_stack = malloc(sizeof(SWorkspace));
   wksp_stack->win_stack = NULL;
+  wksp_stack->num_wins = 0;
   wksp_stack->prev = NULL;
   wksp_stack->next = NULL;
 
@@ -214,6 +264,9 @@ int main() {
       break;
     case MapRequest:
       map_request(&e->xmaprequest);
+      break;
+    case DestroyNotify:
+      destroy_notify(&e->xdestroywindow);
       break;
     case KeyPress:
       key_press(&e->xkey);
