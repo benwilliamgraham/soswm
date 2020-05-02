@@ -98,10 +98,11 @@ void update_windows(SWorkspace *wksp) {
     XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, w - gaps,
                       h - gaps);
   }
-  XSetInputFocus(dpy, wksp_stack->win_stack->win, RevertToNone, CurrentTime);
+  XRaiseWindow(dpy, wksp_stack->win_stack->win);
+  XSetInputFocus(dpy, wksp_stack->win_stack->win, RevertToParent, CurrentTime);
 }
 
-void configure_request(const XConfigureRequestEvent *e) {
+void configure_request(XConfigureRequestEvent *e) {
   /* configure window normally; TODO update this */
   XWindowChanges changes;
   changes.x = e->x;
@@ -136,11 +137,9 @@ void destroy_notify(XDestroyWindowEvent *e) {
     for (SWindow *win = wksp->win_stack; win;
          win = (win->next != wksp->win_stack) ? win->next : NULL) {
       if (win->win == e->window) {
-        fprintf(stderr, "Found\n");
-        if (win == win->next)
+        if (win == win->next) {
           wksp->win_stack = NULL;
-        else {
-          fprintf(stderr, "NF\n");
+        } else {
           win->next->prev = win->prev;
           win->prev->next = win->next;
           if (wksp->win_stack == win)
@@ -158,8 +157,9 @@ void destroy_notify(XDestroyWindowEvent *e) {
 
 /* -- Keyboard interaction -- */
 void window_quit(XKeyPressedEvent *e) {
-  if (e->subwindow != None && !send_event(e->subwindow, WM_DELETE_WINDOW))
-    XKillClient(dpy, e->subwindow);
+  if (wksp_stack->win_stack &&
+      !send_event(wksp_stack->win_stack->win, WM_DELETE_WINDOW))
+    XKillClient(dpy, wksp_stack->win_stack->win);
 }
 
 void window_roll_l(__attribute__((unused)) XKeyPressedEvent *e) {
@@ -280,7 +280,6 @@ void motion_notify(__attribute__((unused)) XMotionEvent *e) {}
 
 /* -- Main loop -- */
 int main() {
-  fprintf(stderr, "ENTER\n");
   /* initialize display */
   if (!(dpy = XOpenDisplay(0x0))) {
     fprintf(stderr, "soswm: Cannot open display\n");
@@ -308,8 +307,8 @@ int main() {
   wksp_stack = malloc(sizeof(SWorkspace));
   wksp_stack->fullscreen = False;
   wksp_stack->win_stack = NULL;
-  wksp_stack->prev = NULL;
-  wksp_stack->next = NULL;
+  wksp_stack->prev = wksp_stack;
+  wksp_stack->next = wksp_stack;
 
   /* initialize communication protocols */
   WM_PROTOCOLS = XInternAtom(dpy, "WM_PROTOCOLS", False);
