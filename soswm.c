@@ -10,7 +10,6 @@ Display *dpy;
 Screen *scr;
 Window root;
 Atom WM_PROTOCOLS, WM_DELETE_WINDOW;
-FILE *log_fd;
 
 const int gaps = 8;
 
@@ -22,6 +21,7 @@ struct SWindow {
 
 typedef struct SWorkspace SWorkspace;
 struct SWorkspace {
+  Bool fullscreen;
   SWindow *win_stack;
   SWorkspace *prev, *next;
 } * wksp_stack;
@@ -64,7 +64,6 @@ Bool send_event(Window win, Atom proto) {
 }
 
 int x_error(Display *dpy, XErrorEvent *err) {
-  fprintf(log_fd, "Error\n");
   char error_text[1024];
   XGetErrorText(dpy, err->error_code, error_text, sizeof(error_text));
   fprintf(stderr, "X error: %s\n", error_text);
@@ -73,9 +72,8 @@ int x_error(Display *dpy, XErrorEvent *err) {
 
 /* -- Window configuration -- */
 void update_windows(SWorkspace *wksp) {
-  fprintf(log_fd, "UPDATING\n");
   SMonitor *mon = mon_stack;
-  if (wksp->win_stack == wksp->win_stack->next) {
+  if (wksp->fullscreen || wksp->win_stack == wksp->win_stack->next) {
     XMoveResizeWindow(dpy, wksp->win_stack->win, mon->x, mon->y, mon->w,
                       mon->h);
   } else {
@@ -100,10 +98,10 @@ void update_windows(SWorkspace *wksp) {
     XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, w - gaps,
                       h - gaps);
   }
+  XSetInputFocus(dpy, wksp_stack->win_stack->win, RevertToNone, CurrentTime);
 }
 
 void configure_request(const XConfigureRequestEvent *e) {
-  fprintf(log_fd, "CONFIG, %ld\n", e->window);
   /* configure window normally; TODO update this */
   XWindowChanges changes;
   changes.x = e->x;
@@ -118,7 +116,8 @@ void configure_request(const XConfigureRequestEvent *e) {
 }
 
 void map_request(XMapRequestEvent *e) {
-  fprintf(log_fd, "MAP, %ld\n", e->window);
+  XMapWindow(dpy, e->window);
+
   /* push the new window */
   SWindow *new = malloc(sizeof(SWindow));
   new->win = e->window;
@@ -129,31 +128,26 @@ void map_request(XMapRequestEvent *e) {
     new->prev = new->next = new;
   wksp_stack->win_stack = new->prev->next = new->next->prev = new;
   update_windows(wksp_stack);
-
-  /* map and focus updated window */
-  XMapWindow(dpy, new->win);
-  XSetInputFocus(dpy, new->win, RevertToPointerRoot, CurrentTime);
 }
 
 void destroy_notify(XDestroyWindowEvent *e) {
-  fprintf(log_fd, "DESTROY\n");
   for (SWorkspace *wksp = wksp_stack; wksp;
        wksp = (wksp->next != wksp_stack) ? wksp->next : NULL) {
     for (SWindow *win = wksp->win_stack; win;
          win = (win->next != wksp->win_stack) ? win->next : NULL) {
       if (win->win == e->window) {
+        fprintf(stderr, "Found\n");
         if (win == win->next)
           wksp->win_stack = NULL;
         else {
+          fprintf(stderr, "NF\n");
           win->next->prev = win->prev;
           win->prev->next = win->next;
-          if (wksp->win_stack == win) {
+          if (wksp->win_stack == win)
             wksp->win_stack = win->next;
-            XSetInputFocus(dpy, win->next->win, RevertToNone, CurrentTime);
 
-            /* TODO make workspace is visible */
-            update_windows(wksp);
-          }
+          /* TODO make sure workspace is visible */
+          update_windows(wksp);
         }
         free(win);
         return;
@@ -169,29 +163,29 @@ void window_quit(XKeyPressedEvent *e) {
 }
 
 void window_roll_l(__attribute__((unused)) XKeyPressedEvent *e) {
-  if (wksp_stack->win_stack)
+  if (wksp_stack->win_stack) {
     wksp_stack->win_stack = wksp_stack->win_stack->next;
+    update_windows(wksp_stack);
+  }
 }
 
 void window_roll_r(__attribute__((unused)) XKeyPressedEvent *e) {
-  if (wksp_stack->win_stack)
+  if (wksp_stack->win_stack) {
     wksp_stack->win_stack = wksp_stack->win_stack->prev;
+    update_windows(wksp_stack);
+  }
 }
 
 void window_swap(XKeyPressedEvent *e) {}
 
 void window_push(XKeyPressedEvent *e) {}
 
-void workspace_new(__attribute__((unused)) XKeyPressedEvent *e) {
-  /* if the top workspace is empty, do nothing */
-  if (!wksp_stack->win_stack)
-    return;
-  SWorkspace *wksp = malloc(sizeof(SWorkspace));
-  wksp->win_stack = NULL;
-  wksp->prev = NULL;
-  wksp->next = wksp_stack;
-  wksp_stack->prev = wksp;
-  wksp_stack = wksp;
+void workspace_new(__attribute__((unused)) XKeyPressedEvent *e) {}
+
+void workspace_fscr(__attribute__((unused)) XKeyPressedEvent *e) {
+  wksp_stack->fullscreen = !wksp_stack->fullscreen;
+  if (wksp_stack->win_stack)
+    update_windows(wksp_stack);
 }
 
 void workspace_roll_l(__attribute__((unused)) XKeyPressedEvent *e) {}
@@ -248,6 +242,7 @@ struct {
 
     /* Workspace management */
     {.mask = Mod4Mask | ControlMask, .key = XK_n, .handler = workspace_new},
+    {.mask = Mod4Mask | ControlMask, .key = XK_f, .handler = workspace_fscr},
     {.mask = Mod4Mask | ControlMask, .key = XK_j, .handler = workspace_roll_l},
     {.mask = Mod4Mask | ControlMask, .key = XK_k, .handler = workspace_roll_r},
     {.mask = Mod4Mask | ControlMask, .key = XK_1, .handler = workspace_swap},
@@ -261,8 +256,8 @@ struct {
     {.mask = Mod4Mask | ControlMask, .key = XK_9, .handler = workspace_swap},
 
     /* WM management */
-    {.mask = Mod4Mask | Mod1Mask, .key = XK_r, .handler = wm_restart},
-    {.mask = Mod4Mask | Mod1Mask, .key = XK_l, .handler = wm_logout},
+    {.mask = Mod4Mask | ShiftMask, .key = XK_r, .handler = wm_restart},
+    {.mask = Mod4Mask | ShiftMask, .key = XK_l, .handler = wm_logout},
 
     /* Launchers */
     {.mask = Mod4Mask, .key = XK_space, .handler = launcher},
@@ -285,7 +280,7 @@ void motion_notify(__attribute__((unused)) XMotionEvent *e) {}
 
 /* -- Main loop -- */
 int main() {
-  log_fd = fopen("/tmp/soswm.log", "w");
+  fprintf(stderr, "ENTER\n");
   /* initialize display */
   if (!(dpy = XOpenDisplay(0x0))) {
     fprintf(stderr, "soswm: Cannot open display\n");
@@ -306,11 +301,12 @@ int main() {
   mon_stack->next->next = NULL;
   mon_stack->w = mon_stack->next->w = 1920;
   mon_stack->h = mon_stack->next->h = 1080;
-  mon_stack->x = 0;
+  mon_stack->x = 1920;
   mon_stack->y = mon_stack->next->x = mon_stack->next->y = 0;
 
   /* create initial workspace */
   wksp_stack = malloc(sizeof(SWorkspace));
+  wksp_stack->fullscreen = False;
   wksp_stack->win_stack = NULL;
   wksp_stack->prev = NULL;
   wksp_stack->next = NULL;
