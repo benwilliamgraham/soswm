@@ -1,6 +1,6 @@
+#include "config.c"
 #include <X11/X.h>
 #include <X11/Xlib.h>
-#include <X11/Xutil.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -11,8 +11,6 @@ Screen *scr;
 Window root;
 Atom WM_PROTOCOLS, WM_DELETE_WINDOW;
 
-const int gaps = 8;
-
 typedef struct SWindow SWindow;
 struct SWindow {
   Window win;
@@ -22,6 +20,7 @@ struct SWindow {
 typedef struct SWorkspace SWorkspace;
 struct SWorkspace {
   Bool fullscreen;
+  float ratio;
   SWindow *win_stack;
   SWorkspace *prev, *next;
 } * wksp_stack;
@@ -32,23 +31,14 @@ struct SMonitor {
   SMonitor *prev, *next;
 } * mon_stack;
 
-/* -- Utility functions -- */
-void launch(char **args) {
-  pid_t pid = fork();
-  if (!pid) {
-    execvp(args[0], args);
-    fprintf(stderr, "soswm: Unnable to run '%s'\n", args[0]);
-    exit(0);
-  }
-}
-
-Bool send_event(Window win, Atom proto) {
+/* -- X-interaction functions -- */
+void kill_window(Window win) {
   int n;
   Atom *protos;
   Bool found = False;
   if (XGetWMProtocols(dpy, win, &protos, &n)) {
     while (!found && n--)
-      found = protos[n] == proto;
+      found = protos[n] == WM_DELETE_WINDOW;
     XFree(protos);
   }
   if (found) {
@@ -57,10 +47,10 @@ Bool send_event(Window win, Atom proto) {
     e.xclient.window = win;
     e.xclient.message_type = WM_PROTOCOLS;
     e.xclient.format = 32;
-    e.xclient.data.l[0] = proto;
+    e.xclient.data.l[0] = WM_DELETE_WINDOW;
     XSendEvent(dpy, win, False, NoEventMask, &e);
-  }
-  return found;
+  } else
+    XKillClient(dpy, win);
 }
 
 int x_error(Display *dpy, XErrorEvent *err) {
@@ -70,8 +60,9 @@ int x_error(Display *dpy, XErrorEvent *err) {
   return 0;
 }
 
-/* -- Window configuration -- */
 void update_windows(SWorkspace *wksp) {
+  if (!wksp->win_stack)
+    return;
   SMonitor *mon = mon_stack;
   if (wksp->fullscreen || wksp->win_stack == wksp->win_stack->next) {
     XMoveResizeWindow(dpy, wksp->win_stack->win, mon->x, mon->y, mon->w,
@@ -83,15 +74,17 @@ void update_windows(SWorkspace *wksp) {
     SWindow *win;
     for (win = wksp->win_stack; win->next != wksp->win_stack; win = win->next) {
       if (v) {
-        XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2,
-                          w / 2 - gaps, h - gaps);
-        w /= 2;
-        x += w;
+        int lw = wksp->ratio * w / 2;
+        XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, lw - gaps,
+                          h - gaps);
+        w -= lw;
+        x += lw;
       } else {
+        int lh = wksp->ratio * h / 2;
         XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, w - gaps,
-                          h / 2 - gaps);
-        h /= 2;
-        y += h;
+                          lh - gaps);
+        h -= lh;
+        y += lh;
       }
       v = !v;
     }
@@ -155,121 +148,10 @@ void destroy_notify(XDestroyWindowEvent *e) {
   }
 }
 
-/* -- Keyboard interaction -- */
-void window_quit(XKeyPressedEvent *e) {
-  if (wksp_stack->win_stack &&
-      !send_event(wksp_stack->win_stack->win, WM_DELETE_WINDOW))
-    XKillClient(dpy, wksp_stack->win_stack->win);
-}
-
-void window_roll_l(__attribute__((unused)) XKeyPressedEvent *e) {
-  if (wksp_stack->win_stack) {
-    wksp_stack->win_stack = wksp_stack->win_stack->next;
-    update_windows(wksp_stack);
-  }
-}
-
-void window_roll_r(__attribute__((unused)) XKeyPressedEvent *e) {
-  if (wksp_stack->win_stack) {
-    wksp_stack->win_stack = wksp_stack->win_stack->prev;
-    update_windows(wksp_stack);
-  }
-}
-
-void window_swap(XKeyPressedEvent *e) {}
-
-void window_push(XKeyPressedEvent *e) {}
-
-void workspace_new(__attribute__((unused)) XKeyPressedEvent *e) {}
-
-void workspace_fscr(__attribute__((unused)) XKeyPressedEvent *e) {
-  wksp_stack->fullscreen = !wksp_stack->fullscreen;
-  if (wksp_stack->win_stack)
-    update_windows(wksp_stack);
-}
-
-void workspace_roll_l(__attribute__((unused)) XKeyPressedEvent *e) {}
-
-void workspace_roll_r(__attribute__((unused)) XKeyPressedEvent *e) {}
-
-void workspace_swap(XKeyPressedEvent *e) {}
-
-void wm_restart(__attribute__((unused)) XKeyPressedEvent *e) {}
-
-void wm_logout(__attribute__((unused)) XKeyPressedEvent *e) {
-  XCloseDisplay(dpy);
-  exit(0);
-}
-
-void launcher(__attribute__((unused)) XKeyPressedEvent *e) {
-  launch((char *[]){"rofi", "-show", "drun", NULL});
-}
-
-void terminal(__attribute__((unused)) XKeyPressedEvent *e) {
-  launch((char *[]){"kitty", NULL});
-}
-
-void editor(__attribute__((unused)) XKeyPressedEvent *e) {
-  launch((char *[]){"kitty", "nvim", NULL});
-}
-
-struct {
-  unsigned int mask, key, keycode;
-  void (*handler)(XKeyPressedEvent *);
-} keybinds[] = {
-    /* Window management */
-    {.mask = Mod4Mask, .key = XK_q, .handler = window_quit},
-    {.mask = Mod4Mask, .key = XK_j, .handler = window_roll_l},
-    {.mask = Mod4Mask, .key = XK_k, .handler = window_roll_r},
-    {.mask = Mod4Mask, .key = XK_1, .handler = window_swap},
-    {.mask = Mod4Mask, .key = XK_2, .handler = window_swap},
-    {.mask = Mod4Mask, .key = XK_3, .handler = window_swap},
-    {.mask = Mod4Mask, .key = XK_4, .handler = window_swap},
-    {.mask = Mod4Mask, .key = XK_5, .handler = window_swap},
-    {.mask = Mod4Mask, .key = XK_6, .handler = window_swap},
-    {.mask = Mod4Mask, .key = XK_7, .handler = window_swap},
-    {.mask = Mod4Mask, .key = XK_8, .handler = window_swap},
-    {.mask = Mod4Mask, .key = XK_9, .handler = window_swap},
-    {.mask = Mod4Mask | ShiftMask, .key = XK_1, .handler = window_push},
-    {.mask = Mod4Mask | ShiftMask, .key = XK_2, .handler = window_push},
-    {.mask = Mod4Mask | ShiftMask, .key = XK_3, .handler = window_push},
-    {.mask = Mod4Mask | ShiftMask, .key = XK_4, .handler = window_push},
-    {.mask = Mod4Mask | ShiftMask, .key = XK_5, .handler = window_push},
-    {.mask = Mod4Mask | ShiftMask, .key = XK_6, .handler = window_push},
-    {.mask = Mod4Mask | ShiftMask, .key = XK_7, .handler = window_push},
-    {.mask = Mod4Mask | ShiftMask, .key = XK_8, .handler = window_push},
-    {.mask = Mod4Mask | ShiftMask, .key = XK_9, .handler = window_push},
-
-    /* Workspace management */
-    {.mask = Mod4Mask | ControlMask, .key = XK_n, .handler = workspace_new},
-    {.mask = Mod4Mask | ControlMask, .key = XK_f, .handler = workspace_fscr},
-    {.mask = Mod4Mask | ControlMask, .key = XK_j, .handler = workspace_roll_l},
-    {.mask = Mod4Mask | ControlMask, .key = XK_k, .handler = workspace_roll_r},
-    {.mask = Mod4Mask | ControlMask, .key = XK_1, .handler = workspace_swap},
-    {.mask = Mod4Mask | ControlMask, .key = XK_2, .handler = workspace_swap},
-    {.mask = Mod4Mask | ControlMask, .key = XK_3, .handler = workspace_swap},
-    {.mask = Mod4Mask | ControlMask, .key = XK_4, .handler = workspace_swap},
-    {.mask = Mod4Mask | ControlMask, .key = XK_5, .handler = workspace_swap},
-    {.mask = Mod4Mask | ControlMask, .key = XK_6, .handler = workspace_swap},
-    {.mask = Mod4Mask | ControlMask, .key = XK_7, .handler = workspace_swap},
-    {.mask = Mod4Mask | ControlMask, .key = XK_8, .handler = workspace_swap},
-    {.mask = Mod4Mask | ControlMask, .key = XK_9, .handler = workspace_swap},
-
-    /* WM management */
-    {.mask = Mod4Mask | ShiftMask, .key = XK_r, .handler = wm_restart},
-    {.mask = Mod4Mask | ShiftMask, .key = XK_l, .handler = wm_logout},
-
-    /* Launchers */
-    {.mask = Mod4Mask, .key = XK_space, .handler = launcher},
-    {.mask = Mod4Mask, .key = XK_t, .handler = terminal},
-    {.mask = Mod4Mask, .key = XK_e, .handler = editor},
-};
-const unsigned int NUM_KEYBINDS = sizeof(keybinds) / sizeof(*keybinds);
-
 void key_press(XKeyPressedEvent *e) {
-  for (unsigned int i = 0; i < NUM_KEYBINDS; i++) {
+  for (unsigned int i = 0; i < num_keybinds; i++) {
     if ((keybinds[i].mask & e->state) && (keybinds[i].keycode == e->keycode))
-      keybinds[i].handler(e);
+      keybinds[i].handler(keybinds[i].arg);
   }
 }
 
@@ -277,6 +159,65 @@ void key_press(XKeyPressedEvent *e) {
 void button_press(__attribute__((unused)) XButtonPressedEvent *e) {}
 
 void motion_notify(__attribute__((unused)) XMotionEvent *e) {}
+
+/* -- Implementation-independant functions -- */
+void window_new(Arg arg) {
+  pid_t pid = fork();
+  if (!pid) {
+    execvp(arg.s[0], arg.s);
+    fprintf(stderr, "soswm: Unnable to run '%s'\n", arg.s[0]);
+    exit(0);
+  }
+}
+
+void window_roll_l(__attribute__((unused)) Arg arg) {
+  if (wksp_stack->win_stack) {
+    wksp_stack->win_stack = wksp_stack->win_stack->next;
+    update_windows(wksp_stack);
+  }
+}
+
+void window_roll_r(__attribute__((unused)) Arg arg) {
+  if (wksp_stack->win_stack) {
+    wksp_stack->win_stack = wksp_stack->win_stack->prev;
+    update_windows(wksp_stack);
+  }
+}
+
+void window_swap(Arg arg) {}
+
+void window_push(Arg arg) {}
+
+void window_quit(__attribute__((unused)) Arg arg) {
+  if (wksp_stack->win_stack)
+    kill_window(wksp_stack->win_stack->win);
+}
+
+void workspace_new(__attribute__((unused)) Arg arg) {}
+
+void workspace_fullscreen(__attribute__((unused)) Arg arg) {
+  wksp_stack->fullscreen = !wksp_stack->fullscreen;
+  update_windows(wksp_stack);
+}
+
+void workspace_shrink(__attribute__((unused)) Arg arg) {}
+
+void workspace_grow(__attribute__((unused)) Arg arg) {}
+
+void workspace_roll_l(__attribute__((unused)) Arg arg) {}
+
+void workspace_roll_r(__attribute__((unused)) Arg arg) {}
+
+void workspace_swap(Arg arg) {}
+
+void workspace_quit(__attribute__((unused)) Arg arg) {}
+
+void wm_restart(__attribute__((unused)) Arg arg) {}
+
+void wm_logout(__attribute__((unused)) Arg arg) {
+  XCloseDisplay(dpy);
+  exit(0);
+}
 
 /* -- Main loop -- */
 int main() {
@@ -306,6 +247,7 @@ int main() {
   /* create initial workspace */
   wksp_stack = malloc(sizeof(SWorkspace));
   wksp_stack->fullscreen = False;
+  wksp_stack->ratio = def_ratio;
   wksp_stack->win_stack = NULL;
   wksp_stack->prev = wksp_stack;
   wksp_stack->next = wksp_stack;
