@@ -6,10 +6,14 @@
 #include <unistd.h>
 
 /* -- Global variables and structures -- */
-Display *dpy;
-Screen *scr;
-Window root;
-Atom WM_PROTOCOLS, WM_DELETE_WINDOW;
+Display *dpy = NULL;
+Screen *scr = NULL;
+Window root = None;
+Atom WM_PROTOCOLS = None, WM_DELETE_WINDOW = None;
+
+typedef struct KeyBind KeyBind;
+const unsigned int num_keybinds = sizeof(keybinds) / sizeof(*keybinds),
+                   num_programs = sizeof(programs) / sizeof(*programs);
 
 typedef struct SWindow SWindow;
 struct SWindow {
@@ -23,15 +27,24 @@ struct SWorkspace {
   float ratio;
   SWindow *win_stack;
   SWorkspace *prev, *next;
-} * wksp_stack;
+} *wksp_stack = NULL;
 
 typedef struct SMonitor SMonitor;
 struct SMonitor {
   unsigned int w, h, x, y;
   SMonitor *prev, *next;
-} * mon_stack;
+} *mon_stack = NULL;
 
 /* -- X-interaction functions -- */
+void launch_window(char **cmd) {
+  pid_t pid = fork();
+  if (!pid) {
+    execvp(cmd[0], cmd);
+    fprintf(stderr, "soswm: Unnable to run '%s'\n", cmd[0]);
+    exit(0);
+  }
+}
+
 void kill_window(Window win) {
   int n;
   Atom *protos;
@@ -155,20 +168,105 @@ void key_press(XKeyPressedEvent *e) {
   }
 }
 
-/* -- Mouse interaction -- */
 void button_press(__attribute__((unused)) XButtonPressedEvent *e) {}
 
 void motion_notify(__attribute__((unused)) XMotionEvent *e) {}
 
-/* -- Implementation-independant functions -- */
-void window_new(Arg arg) {
-  pid_t pid = fork();
-  if (!pid) {
-    execvp(arg.s[0], arg.s);
-    fprintf(stderr, "soswm: Unnable to run '%s'\n", arg.s[0]);
-    exit(0);
+void init() {
+  /* initialize display */
+  if (!dpy)
+    if (!(dpy = XOpenDisplay(0x0))) {
+      fprintf(stderr, "soswm: Cannot open display\n");
+      exit(1);
+    }
+  root = DefaultRootWindow(dpy);
+  XSetErrorHandler(x_error);
+  XSelectInput(dpy, root, SubstructureNotifyMask | SubstructureRedirectMask);
+
+  /* get screen */
+  scr = XDefaultScreenOfDisplay(dpy);
+
+  /* clear then gather monitors; TODO actually determine this */
+  for (SMonitor *mon = mon_stack, *next; mon; mon = next) {
+    next = (mon->next == mon_stack) ? mon->next : NULL;
+    free(mon);
+  }
+  mon_stack = malloc(sizeof(SMonitor));
+  mon_stack->prev = mon_stack;
+  mon_stack->next = mon_stack;
+  mon_stack->w = 1920;
+  mon_stack->h = 1080;
+  mon_stack->x = 1920;
+  mon_stack->y = 0;
+
+  /* create initial workspace if none exists */
+  if (!wksp_stack) {
+    wksp_stack = malloc(sizeof(SWorkspace));
+    wksp_stack->fullscreen = False;
+    wksp_stack->ratio = def_ratio;
+    wksp_stack->win_stack = NULL;
+    wksp_stack->prev = wksp_stack;
+    wksp_stack->next = wksp_stack;
+  }
+
+  /* initialize communication protocols */
+  WM_PROTOCOLS = XInternAtom(dpy, "WM_PROTOCOLS", False);
+  WM_DELETE_WINDOW = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
+
+  /* bind keys */
+  for (KeyBind *k = keybinds; k < keybinds + num_keybinds; k++) {
+    k->keycode = XKeysymToKeycode(dpy, XStringToKeysym(k->key));
+    XGrabKey(dpy, k->keycode, k->mask, root, True, GrabModeAsync,
+             GrabModeAsync);
+  }
+
+  /* bind buttons */
+  /* XGrabButton(dpy, 1, NoEventMask, root, True, */
+  /* ButtonPressMask | ButtonReleaseMask | PointerMotionMask, */
+  /* GrabModeAsync, GrabModeAsync, None, None); */
+
+  /* launch startup programs */
+  for (char ***p = programs; p < programs + num_programs; p++)
+    launch_window(*p);
+}
+
+void run() {
+  for (;;) {
+    XEvent e[1];
+    XNextEvent(dpy, e);
+
+    switch (e->type) {
+    case ConfigureRequest:
+      configure_request(&e->xconfigurerequest);
+      break;
+    case MapRequest:
+      map_request(&e->xmaprequest);
+      break;
+    case DestroyNotify:
+      destroy_notify(&e->xdestroywindow);
+      break;
+    case KeyPress:
+      key_press(&e->xkey);
+      break;
+    case ButtonPress:
+      button_press(&e->xbutton);
+      break;
+    case MotionNotify:
+      while (XCheckTypedWindowEvent(dpy, e->xmotion.window, MotionNotify, e))
+        ;
+      motion_notify(&e->xmotion);
+      break;
+    }
   }
 }
+
+void quit() {
+  XCloseDisplay(dpy);
+  exit(0);
+}
+
+/* -- Implementation-independant functions -- */
+void window_new(Arg arg) { launch_window(arg.s); }
 
 void window_roll_l(__attribute__((unused)) Arg arg) {
   if (wksp_stack->win_stack) {
@@ -214,91 +312,10 @@ void workspace_quit(__attribute__((unused)) Arg arg) {}
 
 void wm_restart(__attribute__((unused)) Arg arg) {}
 
-void wm_logout(__attribute__((unused)) Arg arg) {
-  XCloseDisplay(dpy);
-  exit(0);
-}
+void wm_logout(__attribute__((unused)) Arg arg) { quit(); }
 
 /* -- Main loop -- */
 int main() {
-  /* initialize display */
-  if (!(dpy = XOpenDisplay(0x0))) {
-    fprintf(stderr, "soswm: Cannot open display\n");
-    exit(1);
-  }
-  root = DefaultRootWindow(dpy);
-  XSetErrorHandler(x_error);
-  XSelectInput(dpy, root, SubstructureNotifyMask | SubstructureRedirectMask);
-
-  /* get screen */
-  scr = XDefaultScreenOfDisplay(dpy);
-
-  /* gather monitors; TODO actually determine this */
-  mon_stack = malloc(sizeof(SMonitor));
-  mon_stack->prev = NULL;
-  mon_stack->next = malloc(sizeof(SMonitor));
-  mon_stack->next->prev = mon_stack;
-  mon_stack->next->next = NULL;
-  mon_stack->w = mon_stack->next->w = 1920;
-  mon_stack->h = mon_stack->next->h = 1080;
-  mon_stack->x = 1920;
-  mon_stack->y = mon_stack->next->x = mon_stack->next->y = 0;
-
-  /* create initial workspace */
-  wksp_stack = malloc(sizeof(SWorkspace));
-  wksp_stack->fullscreen = False;
-  wksp_stack->ratio = def_ratio;
-  wksp_stack->win_stack = NULL;
-  wksp_stack->prev = wksp_stack;
-  wksp_stack->next = wksp_stack;
-
-  /* initialize communication protocols */
-  WM_PROTOCOLS = XInternAtom(dpy, "WM_PROTOCOLS", False);
-  WM_DELETE_WINDOW = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
-
-  /* bind keys */
-  for (unsigned int i = 0; i < NUM_KEYBINDS; i++) {
-    keybinds[i].keycode = XKeysymToKeycode(dpy, keybinds[i].key);
-    XGrabKey(dpy, keybinds[i].keycode, keybinds[i].mask, root, True,
-             GrabModeAsync, GrabModeAsync);
-  }
-
-  /* bind buttons */
-  /* XGrabButton(dpy, 1, NoEventMask, root, True, */
-  /* ButtonPressMask | ButtonReleaseMask | PointerMotionMask, */
-  /* GrabModeAsync, GrabModeAsync, None, None); */
-
-  /* run startup programs */
-  launch((char *[]){"feh", "--bg-scale",
-                    "/home/benwilliamgraham/Pictures/mountain.jpg", NULL});
-
-  /* main loop */
-  XSync(dpy, False);
-  for (;;) {
-    XEvent e[1];
-    XNextEvent(dpy, e);
-
-    switch (e->type) {
-    case ConfigureRequest:
-      configure_request(&e->xconfigurerequest);
-      break;
-    case MapRequest:
-      map_request(&e->xmaprequest);
-      break;
-    case DestroyNotify:
-      destroy_notify(&e->xdestroywindow);
-      break;
-    case KeyPress:
-      key_press(&e->xkey);
-      break;
-    case ButtonPress:
-      button_press(&e->xbutton);
-      break;
-    case MotionNotify:
-      while (XCheckTypedWindowEvent(dpy, e->xmotion.window, MotionNotify, e))
-        ;
-      motion_notify(&e->xmotion);
-      break;
-    }
-  }
+  init();
+  run();
 }
