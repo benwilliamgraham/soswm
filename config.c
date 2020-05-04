@@ -29,7 +29,7 @@ void wm_logout(Arg);
 
 /* Startup programs */
 char **programs[] = {(char *[]){
-    "feh", "--bg-scale", "/home/benwilliamgraham/Pictures/Mountain.png", NULL}};
+    "feh", "--bg-scale", "/home/benwilliamgraham/Pictures/mountain.jpg", NULL}};
 
 /* Keybindings */
 struct KeyBind {

@@ -162,9 +162,9 @@ void destroy_notify(XDestroyWindowEvent *e) {
 }
 
 void key_press(XKeyPressedEvent *e) {
-  for (unsigned int i = 0; i < num_keybinds; i++) {
-    if ((keybinds[i].mask & e->state) && (keybinds[i].keycode == e->keycode))
-      keybinds[i].handler(keybinds[i].arg);
+  for (KeyBind *k = keybinds; k < keybinds + num_keybinds; k++) {
+    if ((k->mask == e->state) && (k->keycode == e->keycode))
+      k->handler(k->arg);
   }
 }
 
@@ -273,7 +273,18 @@ void window_pop(__attribute__((unused)) Arg arg) {
     kill_window(wksp_stack->win_stack->win);
 }
 
-void window_swap(Arg arg) {}
+void window_swap(Arg arg) {
+  if (wksp_stack->win_stack) {
+    SWindow *win;
+    Window tmp;
+    for (win = wksp_stack->win_stack; arg.i; win = win->next, arg.i--)
+      ;
+    tmp = win->win;
+    win->win = wksp_stack->win_stack->win;
+    wksp_stack->win_stack->win = tmp;
+    update_windows(wksp_stack);
+  }
+}
 
 void window_roll_l(__attribute__((unused)) Arg arg) {
   if (wksp_stack->win_stack) {
@@ -306,9 +317,15 @@ void workspace_fullscreen(__attribute__((unused)) Arg arg) {
   update_windows(wksp_stack);
 }
 
-void workspace_shrink(__attribute__((unused)) Arg arg) {}
+void workspace_shrink(__attribute__((unused)) Arg arg) {
+  wksp_stack->ratio = (wksp_stack->ratio <= .1) ? .1 : wksp_stack->ratio - .1;
+  update_windows(wksp_stack);
+}
 
-void workspace_grow(__attribute__((unused)) Arg arg) {}
+void workspace_grow(__attribute__((unused)) Arg arg) {
+  wksp_stack->ratio = (wksp_stack->ratio >= 1.9) ? 1.9 : wksp_stack->ratio + .1;
+  update_windows(wksp_stack);
+}
 
 void wm_restart(__attribute__((unused)) Arg arg) {}
 
