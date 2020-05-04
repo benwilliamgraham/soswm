@@ -6,7 +6,7 @@ soswm is a small and fast dynamic window manager.
 
 ## Installation
 
-Run `[sudo] make clean install` to clean, compile, and install soswm:
+Run `[sudo] make clean install` to clean, compile, and install soswm.
 
 ## Functionality
 

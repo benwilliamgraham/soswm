@@ -266,7 +266,14 @@ void quit() {
 }
 
 /* -- Implementation-independant functions -- */
-void window_new(Arg arg) { launch_window(arg.s); }
+void window_push(Arg arg) { launch_window(arg.s); }
+
+void window_pop(__attribute__((unused)) Arg arg) {
+  if (wksp_stack->win_stack)
+    kill_window(wksp_stack->win_stack->win);
+}
+
+void window_swap(Arg arg) {}
 
 void window_roll_l(__attribute__((unused)) Arg arg) {
   if (wksp_stack->win_stack) {
@@ -282,16 +289,17 @@ void window_roll_r(__attribute__((unused)) Arg arg) {
   }
 }
 
-void window_swap(Arg arg) {}
+void window_move(Arg arg) {}
 
-void window_push(Arg arg) {}
+void workspace_push(__attribute__((unused)) Arg arg) {}
 
-void window_quit(__attribute__((unused)) Arg arg) {
-  if (wksp_stack->win_stack)
-    kill_window(wksp_stack->win_stack->win);
-}
+void workspace_pop(__attribute__((unused)) Arg arg) {}
 
-void workspace_new(__attribute__((unused)) Arg arg) {}
+void workspace_swap(Arg arg) {}
+
+void workspace_roll_l(__attribute__((unused)) Arg arg) {}
+
+void workspace_roll_r(__attribute__((unused)) Arg arg) {}
 
 void workspace_fullscreen(__attribute__((unused)) Arg arg) {
   wksp_stack->fullscreen = !wksp_stack->fullscreen;
@@ -301,14 +309,6 @@ void workspace_fullscreen(__attribute__((unused)) Arg arg) {
 void workspace_shrink(__attribute__((unused)) Arg arg) {}
 
 void workspace_grow(__attribute__((unused)) Arg arg) {}
-
-void workspace_roll_l(__attribute__((unused)) Arg arg) {}
-
-void workspace_roll_r(__attribute__((unused)) Arg arg) {}
-
-void workspace_swap(Arg arg) {}
-
-void workspace_quit(__attribute__((unused)) Arg arg) {}
 
 void wm_restart(__attribute__((unused)) Arg arg) {}
 

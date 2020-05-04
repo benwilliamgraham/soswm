@@ -6,22 +6,22 @@ typedef union {
 } Arg;
 
 /* Window manipulation functions */
-void window_new(Arg);
+void window_push(Arg);
+void window_pop(Arg);
+void window_swap(Arg);
 void window_roll_l(Arg);
 void window_roll_r(Arg);
-void window_swap(Arg);
-void window_push(Arg);
-void window_quit(Arg);
+void window_move(Arg);
 
 /* Workspace manipulation functions */
-void workspace_new(Arg);
+void workspace_push(Arg);
+void workspace_pop(Arg);
+void workspace_swap(Arg);
+void workspace_roll_l(Arg);
+void workspace_roll_r(Arg);
 void workspace_fullscreen(Arg);
 void workspace_shrink(Arg);
 void workspace_grow(Arg);
-void workspace_roll_l(Arg);
-void workspace_roll_r(Arg);
-void workspace_swap(Arg);
-void workspace_quit(Arg);
 
 /* Window manager manipulation functions */
 void wm_restart(Arg);
@@ -51,27 +51,27 @@ struct KeyBind {
     {"7", Mod4Mask, window_swap, {.i = 7}},
     {"8", Mod4Mask, window_swap, {.i = 8}},
     {"9", Mod4Mask, window_swap, {.i = 9}},
-    {"1", Mod4Mask | ControlMask, window_push, {.i = 1}},
-    {"2", Mod4Mask | ControlMask, window_push, {.i = 2}},
-    {"3", Mod4Mask | ControlMask, window_push, {.i = 3}},
-    {"4", Mod4Mask | ControlMask, window_push, {.i = 4}},
-    {"5", Mod4Mask | ControlMask, window_push, {.i = 5}},
-    {"6", Mod4Mask | ControlMask, window_push, {.i = 6}},
-    {"7", Mod4Mask | ControlMask, window_push, {.i = 7}},
-    {"8", Mod4Mask | ControlMask, window_push, {.i = 8}},
-    {"9", Mod4Mask | ControlMask, window_push, {.i = 9}},
-    {"q", Mod4Mask, window_quit},
+    {"1", Mod4Mask | ControlMask, window_move, {.i = 1}},
+    {"2", Mod4Mask | ControlMask, window_move, {.i = 2}},
+    {"3", Mod4Mask | ControlMask, window_move, {.i = 3}},
+    {"4", Mod4Mask | ControlMask, window_move, {.i = 4}},
+    {"5", Mod4Mask | ControlMask, window_move, {.i = 5}},
+    {"6", Mod4Mask | ControlMask, window_move, {.i = 6}},
+    {"7", Mod4Mask | ControlMask, window_move, {.i = 7}},
+    {"8", Mod4Mask | ControlMask, window_move, {.i = 8}},
+    {"9", Mod4Mask | ControlMask, window_move, {.i = 9}},
+    {"q", Mod4Mask, window_pop},
 
     /* Launchers */
     {"space",
      Mod4Mask,
-     window_new,
+     window_push,
      {.s = (char *[]){"rofi", "-show", "drun", NULL}}},
-    {"t", Mod4Mask, window_new, {.s = (char *[]){"kitty", NULL}}},
-    {"e", Mod4Mask, window_new, {.s = (char *[]){"kitty", "nvim", NULL}}},
+    {"t", Mod4Mask, window_push, {.s = (char *[]){"kitty", NULL}}},
+    {"e", Mod4Mask, window_push, {.s = (char *[]){"kitty", "nvim", NULL}}},
 
     /* Workspace manipulation */
-    {"n", Mod4Mask | ShiftMask, workspace_new},
+    {"n", Mod4Mask | ShiftMask, workspace_push},
     {"f", Mod4Mask | ShiftMask, workspace_fullscreen},
     {"h", Mod4Mask | ShiftMask, workspace_shrink},
     {"l", Mod4Mask | ShiftMask, workspace_grow},
@@ -86,7 +86,7 @@ struct KeyBind {
     {"7", Mod4Mask | ShiftMask, workspace_swap, {.i = 7}},
     {"8", Mod4Mask | ShiftMask, workspace_swap, {.i = 8}},
     {"9", Mod4Mask | ShiftMask, workspace_swap, {.i = 9}},
-    {"q", Mod4Mask | ShiftMask, workspace_quit},
+    {"q", Mod4Mask | ShiftMask, workspace_pop},
 
     /* Window manager manipulation */
     {"r", Mod4Mask | Mod1Mask, wm_restart},
