@@ -36,36 +36,6 @@ struct SMonitor {
 } *mon_stack = NULL;
 
 /* -- X-interaction functions -- */
-void launch_window(char **cmd) {
-  pid_t pid = fork();
-  if (!pid) {
-    execvp(cmd[0], cmd);
-    fprintf(stderr, "soswm: Unnable to run '%s'\n", cmd[0]);
-    exit(0);
-  }
-}
-
-void kill_window(Window win) {
-  int n;
-  Atom *protos;
-  Bool found = False;
-  if (XGetWMProtocols(dpy, win, &protos, &n)) {
-    while (!found && n--)
-      found = protos[n] == WM_DELETE_WINDOW;
-    XFree(protos);
-  }
-  if (found) {
-    XEvent e;
-    e.type = ClientMessage;
-    e.xclient.window = win;
-    e.xclient.message_type = WM_PROTOCOLS;
-    e.xclient.format = 32;
-    e.xclient.data.l[0] = WM_DELETE_WINDOW;
-    XSendEvent(dpy, win, False, NoEventMask, &e);
-  } else
-    XKillClient(dpy, win);
-}
-
 int x_error(Display *dpy, XErrorEvent *err) {
   char error_text[1024];
   XGetErrorText(dpy, err->error_code, error_text, sizeof(error_text));
@@ -108,41 +78,42 @@ void update_windows(SWorkspace *wksp) {
   XSetInputFocus(dpy, wksp_stack->win_stack->win, RevertToParent, CurrentTime);
 }
 
-void configure_request(XConfigureRequestEvent *e) {
-  /* configure window normally; TODO update this */
-  XWindowChanges changes;
-  changes.x = e->x;
-  changes.y = e->y;
-  changes.width = e->width;
-  changes.height = e->height;
-  changes.border_width = e->border_width;
-  changes.sibling = e->above;
-  changes.stack_mode = e->detail;
-  XConfigureWindow(dpy, e->window, e->value_mask, &changes);
-  XSync(dpy, False);
+void launch_window(char **cmd) {
+  pid_t pid = fork();
+  if (!pid) {
+    execvp(cmd[0], cmd);
+    fprintf(stderr, "soswm: Unnable to run '%s'\n", cmd[0]);
+    exit(0);
+  }
 }
 
-void map_request(XMapRequestEvent *e) {
-  XMapWindow(dpy, e->window);
-
-  /* push the new window */
-  SWindow *new = malloc(sizeof(SWindow));
-  new->win = e->window;
-  if (wksp_stack->win_stack) {
-    new->prev = wksp_stack->win_stack->prev;
-    new->next = wksp_stack->win_stack;
+void kill_window(Window win) {
+  int n;
+  Atom *protos;
+  Bool found = False;
+  if (XGetWMProtocols(dpy, win, &protos, &n)) {
+    while (!found && n--)
+      found = protos[n] == WM_DELETE_WINDOW;
+    XFree(protos);
+  }
+  if (found) {
+    XEvent e;
+    e.type = ClientMessage;
+    e.xclient.window = win;
+    e.xclient.message_type = WM_PROTOCOLS;
+    e.xclient.format = 32;
+    e.xclient.data.l[0] = WM_DELETE_WINDOW;
+    XSendEvent(dpy, win, False, NoEventMask, &e);
   } else
-    new->prev = new->next = new;
-  wksp_stack->win_stack = new->prev->next = new->next->prev = new;
-  update_windows(wksp_stack);
+    XKillClient(dpy, win);
 }
 
-void destroy_notify(XDestroyWindowEvent *e) {
+void remove_window(Window target) {
   for (SWorkspace *wksp = wksp_stack; wksp;
        wksp = (wksp->next != wksp_stack) ? wksp->next : NULL) {
     for (SWindow *win = wksp->win_stack; win;
          win = (win->next != wksp->win_stack) ? win->next : NULL) {
-      if (win->win == e->window) {
+      if (win->win == target) {
         if (win == win->next) {
           wksp->win_stack = NULL;
         } else {
@@ -160,6 +131,37 @@ void destroy_notify(XDestroyWindowEvent *e) {
     }
   }
 }
+
+void configure_request(XConfigureRequestEvent *e) {
+  /* configure window normally; TODO update this */
+  XWindowChanges changes;
+  changes.x = e->x;
+  changes.y = e->y;
+  changes.width = e->width;
+  changes.height = e->height;
+  changes.border_width = e->border_width;
+  changes.sibling = e->above;
+  changes.stack_mode = e->detail;
+  XConfigureWindow(dpy, e->window, e->value_mask, &changes);
+  update_windows(wksp_stack);
+}
+
+void map_request(XMapRequestEvent *e) {
+  XMapWindow(dpy, e->window);
+  SWindow *new = malloc(sizeof(SWindow));
+  new->win = e->window;
+  if (wksp_stack->win_stack) {
+    new->prev = wksp_stack->win_stack->prev;
+    new->next = wksp_stack->win_stack;
+  } else
+    new->prev = new->next = new;
+  wksp_stack->win_stack = new->prev->next = new->next->prev = new;
+  update_windows(wksp_stack);
+}
+
+void destroy_notify(XDestroyWindowEvent *e) { remove_window(e->window); }
+
+void unmap_notify(XUnmapEvent *e) { remove_window(e->window); }
 
 void key_press(XKeyPressedEvent *e) {
   for (KeyBind *k = keybinds; k < keybinds + num_keybinds; k++) {
@@ -244,6 +246,9 @@ void run() {
       break;
     case DestroyNotify:
       destroy_notify(&e->xdestroywindow);
+      break;
+    case UnmapNotify:
+      unmap_notify(&e->xunmap);
       break;
     case KeyPress:
       key_press(&e->xkey);
