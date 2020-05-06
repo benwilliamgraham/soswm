@@ -88,29 +88,38 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
   XSetInputFocus(dpy, wksp_stack->win_stack->win, RevertToParent, CurrentTime);
 }
 
-void redraw_all() {
-  SWorkspace *wksp = wksp_stack;
-  for (SMonitor *mon = mon_stack; mon && wksp;
-       mon = (mon->next != mon_stack) ? mon->next : NULL,
-                wksp = (wksp->next != wksp_stack) ? wksp->next : NULL)
-    draw_workspace(mon, wksp);
-}
-
 void hide_workspace(SWorkspace *tgt) {
   for (SWindow *win = tgt->win_stack; win;
        win = (win->next != tgt->win_stack) ? win->next : NULL)
     XMoveWindow(dpy, win->win, dw, dh);
 }
 
-void update_workspace(SWorkspace *tgt) {
+void draw_all(Bool hide_1st_inactive) {
   SWorkspace *wksp = wksp_stack;
-  for (SMonitor *mon = mon_stack; mon;
-       mon = (mon->next != mon_stack) ? mon->next : NULL)
-    if (wksp == tgt) {
-      draw_workspace(mon, tgt);
-      return;
-    }
-  hide_workspace(tgt);
+  for (SMonitor *mon = mon_stack; mon && wksp;
+       mon = (mon->next != mon_stack) ? mon->next : NULL,
+                wksp = (wksp->next != wksp_stack) ? wksp->next : NULL)
+    draw_workspace(mon, wksp);
+  if (wksp && hide_1st_inactive)
+    hide_workspace(wksp);
+}
+
+SWorkspace *nth_workspace(unsigned int n, SMonitor **mon) {
+  *mon = mon_stack;
+  for (SWorkspace *wksp = wksp_stack; wksp;
+       *mon = (*mon && (*mon)->next != mon_stack) ? (*mon)->next : NULL,
+                  wksp = (wksp->next != wksp_stack) ? wksp->next : NULL)
+    if (!n--)
+      return wksp;
+  return NULL;
+}
+
+SWindow *nth_window(unsigned int n, SWorkspace *wksp) {
+  for (SWindow *win = wksp->win_stack; win;
+       win = (win->next != wksp->win_stack) ? win->next : NULL)
+    if (!n--)
+      return win;
+  return NULL;
 }
 
 void launch_window(char **cmd) {
@@ -318,16 +327,14 @@ void window_pop(__attribute__((unused)) Arg arg) {
 
 void window_swap(Arg arg) {
   if (wksp_stack->win_stack) {
-    /* find new window */
-    SWindow *win = wksp_stack->win_stack;
-    for (; arg.i; win = win->next, arg.i--)
-      ;
-
-    /* swap windows and redraw */
-    Window tmp = win->win;
-    win->win = wksp_stack->win_stack->win;
-    wksp_stack->win_stack->win = tmp;
-    draw_workspace(mon_stack, wksp_stack);
+    SWindow *win = nth_window(arg.i, wksp_stack);
+    if (win) {
+      /* swap windows and redraw */
+      Window tmp = win->win;
+      win->win = wksp_stack->win_stack->win;
+      wksp_stack->win_stack->win = tmp;
+      draw_workspace(mon_stack, wksp_stack);
+    }
   }
 }
 
@@ -348,70 +355,116 @@ void window_roll_r(__attribute__((unused)) Arg arg) {
 void window_move(Arg arg) {
   SWindow *tgt = wksp_stack->win_stack;
   if (tgt) {
-    /* find new workspace */
-    SWorkspace *wksp = wksp_stack;
-    for (; arg.i; wksp = wksp->next, arg.i--)
-      ;
+    SMonitor *mon;
+    SWorkspace *wksp = nth_workspace(arg.i, &mon);
+    if (wksp) {
+      /* remove from old TOS */
+      if (tgt == tgt->next)
+        wksp_stack->win_stack = NULL;
+      else
+        wksp_stack->win_stack = tgt->prev->next = tgt->next,
+        tgt->next->prev = tgt->prev;
 
-    /* remove from old TOS */
-    if (tgt == tgt->next)
-      wksp_stack->win_stack = NULL;
-    else
-      wksp_stack->win_stack = tgt->prev->next = tgt->next,
-      tgt->next->prev = tgt->prev;
+      /* add to new TOS */
+      if (wksp->win_stack) {
+        tgt->prev = wksp->win_stack->prev;
+        tgt->next = wksp->win_stack;
+      } else
+        tgt->prev = tgt->next = tgt;
+      tgt->prev->next = tgt->next->prev = wksp->win_stack = tgt;
 
-    /* add to new TOS */
-    if (wksp->win_stack) {
-      tgt->prev = wksp->win_stack->prev;
-      tgt->next = wksp->win_stack;
-    } else
-      tgt->prev = tgt->next = tgt;
-    tgt->prev->next = tgt->next->prev = wksp->win_stack = tgt;
+      /* redraw */
+      draw_workspace(mon_stack, wksp_stack);
+      if (mon)
+        draw_workspace(mon, wksp);
+    }
   }
 }
 
-void workspace_push(__attribute__((unused)) Arg arg) {}
+void workspace_push(__attribute__((unused)) Arg arg) {
+  /* create new workspace */
+  SWorkspace *wksp = malloc(sizeof(SWorkspace));
+  wksp->win_stack = NULL;
+  wksp->fullscreen = False;
+  wksp->ratio = def_ratio;
 
-void workspace_pop(__attribute__((unused)) Arg arg) {}
+  /* push new workspace and redraw all, hiding the bumped workspace */
+  wksp->prev = wksp_stack->prev;
+  wksp->next = wksp_stack;
+  wksp_stack = wksp->prev->next = wksp->next->prev = wksp;
+  draw_all(True);
+}
+
+void workspace_pop(__attribute__((unused)) Arg arg) {
+  SWorkspace *tgt = wksp_stack;
+  if (tgt != tgt->next && !tgt->win_stack) {
+    /* remove, free, and draw change */
+    tgt->prev->next = tgt->next;
+    tgt->next->prev = tgt->prev;
+    wksp_stack = tgt->next;
+    free(tgt);
+    draw_all(False);
+  }
+}
 
 void workspace_swap(Arg arg) {
-  SWorkspace *wksp = wksp_stack;
-  for (; arg.i; wksp = wksp->next, arg.i--)
-    ;
-  swap_ptr((void *)&wksp->prev, (void *)&wksp_stack->prev);
-  swap_ptr((void *)&wksp->next, (void *)&wksp_stack->next);
-  swap_ptr((void *)&wksp, (void *)&wksp_stack);
+  SMonitor *mon;
+  SWorkspace *tgt = nth_workspace(arg.i, &mon), *tos = wksp_stack;
+  if (tgt) {
+    /* swap positions */
+    swap_ptr((void *)&tgt->prev, (void *)&tos->prev);
+    swap_ptr((void *)&tgt->next, (void *)&tos->next);
+    tos->prev->next = tos->next->prev = tos;
+    wksp_stack = tgt->prev->next = tgt->next->prev = tgt;
+
+    /* draw updated workspaces */
+    draw_workspace(mon_stack, wksp_stack);
+    if (mon)
+      draw_workspace(mon, tos);
+    else
+      hide_workspace(tos);
+  }
 }
 
 void workspace_roll_l(__attribute__((unused)) Arg arg) {
   wksp_stack = wksp_stack->next;
+  // TODO
 }
 
 void workspace_roll_r(__attribute__((unused)) Arg arg) {
   wksp_stack = wksp_stack->prev;
+  // TODO
 }
 
 void workspace_fullscreen(__attribute__((unused)) Arg arg) {
   wksp_stack->fullscreen = !wksp_stack->fullscreen;
+  draw_workspace(mon_stack, wksp_stack);
 }
 
 void workspace_shrink(__attribute__((unused)) Arg arg) {
   wksp_stack->ratio = max(wksp_stack->ratio - 0.1f, 0.1f);
+  draw_workspace(mon_stack, wksp_stack);
 }
 
 void workspace_grow(__attribute__((unused)) Arg arg) {
   wksp_stack->ratio = min(wksp_stack->ratio + 0.1f, 1.9f);
+  draw_workspace(mon_stack, wksp_stack);
+}
+
+void mon_swap(Arg arg) {
+  // TODO
+  draw_all(False);
 }
 
 void mon_roll_l(__attribute__((unused)) Arg arg) {
   mon_stack = mon_stack->next;
+  draw_all(False);
 }
 
 void mon_roll_r(__attribute__((unused)) Arg arg) {
   mon_stack = mon_stack->prev;
+  draw_all(False);
 }
-
-void mon_swap(Arg) {}
 
 void wm_restart(__attribute__((unused)) Arg arg) { init(); }
 

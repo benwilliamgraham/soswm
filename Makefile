@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -O3 -Wall
-LIBS = -lX11
+LIBS = -lX11 -lXrandr
 TARGET = soswm
 
 soswm: soswm.c config.c
