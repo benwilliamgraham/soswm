@@ -24,6 +24,9 @@ void workspace_shrink(Arg);
 void workspace_grow(Arg);
 
 /* Window manager manipulation functions */
+void mon_swap(Arg);
+void mon_roll_l(Arg);
+void mon_roll_r(Arg);
 void wm_restart(Arg);
 void wm_logout(Arg);
 
@@ -89,6 +92,17 @@ struct KeyBind {
     {"q", Mod4Mask | ShiftMask, workspace_pop},
 
     /* Window manager manipulation */
+    {"j", Mod4Mask | Mod1Mask, mon_roll_l},
+    {"k", Mod4Mask | Mod1Mask, mon_roll_r},
+    {"1", Mod4Mask | Mod1Mask, mon_swap, {.i = 1}},
+    {"2", Mod4Mask | Mod1Mask, mon_swap, {.i = 2}},
+    {"3", Mod4Mask | Mod1Mask, mon_swap, {.i = 3}},
+    {"4", Mod4Mask | Mod1Mask, mon_swap, {.i = 4}},
+    {"5", Mod4Mask | Mod1Mask, mon_swap, {.i = 5}},
+    {"6", Mod4Mask | Mod1Mask, mon_swap, {.i = 6}},
+    {"7", Mod4Mask | Mod1Mask, mon_swap, {.i = 7}},
+    {"8", Mod4Mask | Mod1Mask, mon_swap, {.i = 8}},
+    {"9", Mod4Mask | Mod1Mask, mon_swap, {.i = 9}},
     {"r", Mod4Mask | Mod1Mask, wm_restart},
     {"l", Mod4Mask | Mod1Mask, wm_logout}};
 

@@ -1,13 +1,14 @@
 #include "config.c"
 #include <X11/X.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/Xrandr.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 /* -- Global variables and structures -- */
 Display *dpy = NULL;
-Screen *scr = NULL;
+unsigned int dw, dh;
 Window root = None;
 Atom WM_PROTOCOLS = None, WM_DELETE_WINDOW = None;
 
@@ -35,6 +36,17 @@ struct SMonitor {
   SMonitor *prev, *next;
 } *mon_stack = NULL;
 
+/* -- Util functions -- */
+inline float min(float a, float b) { return (a < b) ? a : b; }
+
+inline float max(float a, float b) { return (a > b) ? a : b; }
+
+inline void swap_ptr(void **a, void **b) {
+  void *tmp = *a;
+  *a = *b;
+  *b = tmp;
+}
+
 /* -- X-interaction functions -- */
 int x_error(Display *dpy, XErrorEvent *err) {
   char error_text[1024];
@@ -43,27 +55,25 @@ int x_error(Display *dpy, XErrorEvent *err) {
   return 0;
 }
 
-void update_windows(SWorkspace *wksp) {
-  if (!wksp->win_stack)
+void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
+  if (!tgt->win_stack)
     return;
-  SMonitor *mon = mon_stack;
-  if (wksp->fullscreen || wksp->win_stack == wksp->win_stack->next) {
-    XMoveResizeWindow(dpy, wksp->win_stack->win, mon->x, mon->y, mon->w,
-                      mon->h);
+  if (tgt->fullscreen || tgt->win_stack == tgt->win_stack->next) {
+    XMoveResizeWindow(dpy, tgt->win_stack->win, mon->x, mon->y, mon->w, mon->h);
   } else {
     Bool v = True;
     unsigned int x = mon->x + gaps / 2, y = mon->y + gaps / 2,
                  w = mon->w - gaps, h = mon->h - gaps;
     SWindow *win;
-    for (win = wksp->win_stack; win->next != wksp->win_stack; win = win->next) {
+    for (win = tgt->win_stack; win->next != tgt->win_stack; win = win->next) {
       if (v) {
-        int lw = wksp->ratio * w / 2;
+        int lw = tgt->ratio * w / 2;
         XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, lw - gaps,
                           h - gaps);
         w -= lw;
         x += lw;
       } else {
-        int lh = wksp->ratio * h / 2;
+        int lh = tgt->ratio * h / 2;
         XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, w - gaps,
                           lh - gaps);
         h -= lh;
@@ -78,6 +88,31 @@ void update_windows(SWorkspace *wksp) {
   XSetInputFocus(dpy, wksp_stack->win_stack->win, RevertToParent, CurrentTime);
 }
 
+void redraw_all() {
+  SWorkspace *wksp = wksp_stack;
+  for (SMonitor *mon = mon_stack; mon && wksp;
+       mon = (mon->next != mon_stack) ? mon->next : NULL,
+                wksp = (wksp->next != wksp_stack) ? wksp->next : NULL)
+    draw_workspace(mon, wksp);
+}
+
+void hide_workspace(SWorkspace *tgt) {
+  for (SWindow *win = tgt->win_stack; win;
+       win = (win->next != tgt->win_stack) ? win->next : NULL)
+    XMoveWindow(dpy, win->win, dw, dh);
+}
+
+void update_workspace(SWorkspace *tgt) {
+  SWorkspace *wksp = wksp_stack;
+  for (SMonitor *mon = mon_stack; mon;
+       mon = (mon->next != mon_stack) ? mon->next : NULL)
+    if (wksp == tgt) {
+      draw_workspace(mon, tgt);
+      return;
+    }
+  hide_workspace(tgt);
+}
+
 void launch_window(char **cmd) {
   pid_t pid = fork();
   if (!pid) {
@@ -87,11 +122,11 @@ void launch_window(char **cmd) {
   }
 }
 
-void kill_window(Window win) {
+void kill_window(Window tgt) {
   int n;
   Atom *protos;
   Bool found = False;
-  if (XGetWMProtocols(dpy, win, &protos, &n)) {
+  if (XGetWMProtocols(dpy, tgt, &protos, &n)) {
     while (!found && n--)
       found = protos[n] == WM_DELETE_WINDOW;
     XFree(protos);
@@ -99,36 +134,44 @@ void kill_window(Window win) {
   if (found) {
     XEvent e;
     e.type = ClientMessage;
-    e.xclient.window = win;
+    e.xclient.window = tgt;
     e.xclient.message_type = WM_PROTOCOLS;
     e.xclient.format = 32;
     e.xclient.data.l[0] = WM_DELETE_WINDOW;
-    XSendEvent(dpy, win, False, NoEventMask, &e);
+    XSendEvent(dpy, tgt, False, NoEventMask, &e);
   } else
-    XKillClient(dpy, win);
+    XKillClient(dpy, tgt);
 }
 
-void remove_window(Window target) {
-  for (SWorkspace *wksp = wksp_stack; wksp;
-       wksp = (wksp->next != wksp_stack) ? wksp->next : NULL) {
-    for (SWindow *win = wksp->win_stack; win;
-         win = (win->next != wksp->win_stack) ? win->next : NULL) {
-      if (win->win == target) {
-        if (win == win->next) {
-          wksp->win_stack = NULL;
-        } else {
-          win->next->prev = win->prev;
-          win->prev->next = win->next;
-          if (wksp->win_stack == win)
-            wksp->win_stack = win->next;
+Bool find_window(Window tgt, SMonitor **mon, SWorkspace **wksp, SWindow **win) {
+  for (*mon = mon_stack, *wksp = wksp_stack; *wksp;
+       *mon = (*mon && (*mon)->next != mon_stack) ? (*mon)->next : NULL,
+      *wksp = ((*wksp)->next != wksp_stack) ? (*wksp)->next : NULL) {
+    for (*win = (*wksp)->win_stack; *win;
+         *win = ((*win)->next != (*wksp)->win_stack) ? (*win)->next : NULL)
+      if ((*win)->win == tgt)
+        return True;
+  }
+  return False;
+}
 
-          /* TODO make sure workspace is visible */
-          update_windows(wksp);
-        }
-        free(win);
-        return;
-      }
+void remove_window(Window tgt) {
+  SMonitor *mon;
+  SWorkspace *wksp;
+  SWindow *win;
+  if (find_window(tgt, &mon, &wksp, &win)) {
+    if (win == win->next) {
+      wksp->win_stack = NULL;
+    } else {
+      win->next->prev = win->prev;
+      win->prev->next = win->next;
+      if (wksp->win_stack == win)
+        wksp->win_stack = win->next;
+
+      if (mon)
+        draw_workspace(mon, wksp);
     }
+    free(win);
   }
 }
 
@@ -143,7 +186,11 @@ void configure_request(XConfigureRequestEvent *e) {
   changes.sibling = e->above;
   changes.stack_mode = e->detail;
   XConfigureWindow(dpy, e->window, e->value_mask, &changes);
-  update_windows(wksp_stack);
+  SMonitor *mon;
+  SWorkspace *wksp;
+  SWindow *win;
+  if (find_window(e->window, &mon, &wksp, &win) && mon)
+    draw_workspace(mon, wksp);
 }
 
 void map_request(XMapRequestEvent *e) {
@@ -156,7 +203,7 @@ void map_request(XMapRequestEvent *e) {
   } else
     new->prev = new->next = new;
   wksp_stack->win_stack = new->prev->next = new->next->prev = new;
-  update_windows(wksp_stack);
+  draw_workspace(mon_stack, wksp_stack);
 }
 
 void destroy_notify(XDestroyWindowEvent *e) { remove_window(e->window); }
@@ -170,10 +217,6 @@ void key_press(XKeyPressedEvent *e) {
   }
 }
 
-void button_press(__attribute__((unused)) XButtonPressedEvent *e) {}
-
-void motion_notify(__attribute__((unused)) XMotionEvent *e) {}
-
 void init() {
   /* initialize display */
   if (!dpy)
@@ -181,25 +224,33 @@ void init() {
       fprintf(stderr, "soswm: Cannot open display\n");
       exit(1);
     }
+  Screen *scr = XDefaultScreenOfDisplay(dpy);
+  dw = XWidthOfScreen(scr), dh = XHeightOfScreen(scr);
   root = DefaultRootWindow(dpy);
   XSetErrorHandler(x_error);
   XSelectInput(dpy, root, SubstructureNotifyMask | SubstructureRedirectMask);
 
-  /* get screen */
-  scr = XDefaultScreenOfDisplay(dpy);
-
-  /* clear then gather monitors; TODO actually determine this */
+  /* clear then gather monitors */
   for (SMonitor *mon = mon_stack, *next; mon; mon = next) {
     next = (mon->next == mon_stack) ? mon->next : NULL;
     free(mon);
   }
-  mon_stack = malloc(sizeof(SMonitor));
-  mon_stack->prev = mon_stack;
-  mon_stack->next = mon_stack;
-  mon_stack->w = 1920;
-  mon_stack->h = 1080;
-  mon_stack->x = 1920;
-  mon_stack->y = 0;
+  int n_mons;
+  XRRMonitorInfo *mons = XRRGetMonitors(dpy, root, False, &n_mons);
+  for (XRRMonitorInfo *mon = mons; mon < mons + n_mons; mon++) {
+    SMonitor *new = malloc(sizeof(SMonitor));
+    new->x = mon->x;
+    new->y = mon->y;
+    new->w = mon->width;
+    new->h = mon->height;
+    if (mon_stack) {
+      new->prev = mon_stack->prev;
+      new->next = mon_stack;
+      mon_stack->prev->next = mon_stack->next->prev = new;
+    } else
+      new->prev = new->next = new;
+    mon_stack = new;
+  }
 
   /* create initial workspace if none exists */
   if (!wksp_stack) {
@@ -221,11 +272,6 @@ void init() {
     XGrabKey(dpy, k->keycode, k->mask, root, True, GrabModeAsync,
              GrabModeAsync);
   }
-
-  /* bind buttons */
-  /* XGrabButton(dpy, 1, NoEventMask, root, True, */
-  /* ButtonPressMask | ButtonReleaseMask | PointerMotionMask, */
-  /* GrabModeAsync, GrabModeAsync, None, None); */
 
   /* launch startup programs */
   for (char ***p = programs; p < programs + num_programs; p++)
@@ -253,14 +299,6 @@ void run() {
     case KeyPress:
       key_press(&e->xkey);
       break;
-    case ButtonPress:
-      button_press(&e->xbutton);
-      break;
-    case MotionNotify:
-      while (XCheckTypedWindowEvent(dpy, e->xmotion.window, MotionNotify, e))
-        ;
-      motion_notify(&e->xmotion);
-      break;
     }
   }
 }
@@ -280,59 +318,102 @@ void window_pop(__attribute__((unused)) Arg arg) {
 
 void window_swap(Arg arg) {
   if (wksp_stack->win_stack) {
-    SWindow *win;
-    Window tmp;
-    for (win = wksp_stack->win_stack; arg.i; win = win->next, arg.i--)
+    /* find new window */
+    SWindow *win = wksp_stack->win_stack;
+    for (; arg.i; win = win->next, arg.i--)
       ;
-    tmp = win->win;
+
+    /* swap windows and redraw */
+    Window tmp = win->win;
     win->win = wksp_stack->win_stack->win;
     wksp_stack->win_stack->win = tmp;
-    update_windows(wksp_stack);
+    draw_workspace(mon_stack, wksp_stack);
   }
 }
 
 void window_roll_l(__attribute__((unused)) Arg arg) {
   if (wksp_stack->win_stack) {
     wksp_stack->win_stack = wksp_stack->win_stack->next;
-    update_windows(wksp_stack);
+    draw_workspace(mon_stack, wksp_stack);
   }
 }
 
 void window_roll_r(__attribute__((unused)) Arg arg) {
   if (wksp_stack->win_stack) {
     wksp_stack->win_stack = wksp_stack->win_stack->prev;
-    update_windows(wksp_stack);
+    draw_workspace(mon_stack, wksp_stack);
   }
 }
 
-void window_move(Arg arg) {}
+void window_move(Arg arg) {
+  SWindow *tgt = wksp_stack->win_stack;
+  if (tgt) {
+    /* find new workspace */
+    SWorkspace *wksp = wksp_stack;
+    for (; arg.i; wksp = wksp->next, arg.i--)
+      ;
+
+    /* remove from old TOS */
+    if (tgt == tgt->next)
+      wksp_stack->win_stack = NULL;
+    else
+      wksp_stack->win_stack = tgt->prev->next = tgt->next,
+      tgt->next->prev = tgt->prev;
+
+    /* add to new TOS */
+    if (wksp->win_stack) {
+      tgt->prev = wksp->win_stack->prev;
+      tgt->next = wksp->win_stack;
+    } else
+      tgt->prev = tgt->next = tgt;
+    tgt->prev->next = tgt->next->prev = wksp->win_stack = tgt;
+  }
+}
 
 void workspace_push(__attribute__((unused)) Arg arg) {}
 
 void workspace_pop(__attribute__((unused)) Arg arg) {}
 
-void workspace_swap(Arg arg) {}
+void workspace_swap(Arg arg) {
+  SWorkspace *wksp = wksp_stack;
+  for (; arg.i; wksp = wksp->next, arg.i--)
+    ;
+  swap_ptr((void *)&wksp->prev, (void *)&wksp_stack->prev);
+  swap_ptr((void *)&wksp->next, (void *)&wksp_stack->next);
+  swap_ptr((void *)&wksp, (void *)&wksp_stack);
+}
 
-void workspace_roll_l(__attribute__((unused)) Arg arg) {}
+void workspace_roll_l(__attribute__((unused)) Arg arg) {
+  wksp_stack = wksp_stack->next;
+}
 
-void workspace_roll_r(__attribute__((unused)) Arg arg) {}
+void workspace_roll_r(__attribute__((unused)) Arg arg) {
+  wksp_stack = wksp_stack->prev;
+}
 
 void workspace_fullscreen(__attribute__((unused)) Arg arg) {
   wksp_stack->fullscreen = !wksp_stack->fullscreen;
-  update_windows(wksp_stack);
 }
 
 void workspace_shrink(__attribute__((unused)) Arg arg) {
-  wksp_stack->ratio = (wksp_stack->ratio <= .1) ? .1 : wksp_stack->ratio - .1;
-  update_windows(wksp_stack);
+  wksp_stack->ratio = max(wksp_stack->ratio - 0.1f, 0.1f);
 }
 
 void workspace_grow(__attribute__((unused)) Arg arg) {
-  wksp_stack->ratio = (wksp_stack->ratio >= 1.9) ? 1.9 : wksp_stack->ratio + .1;
-  update_windows(wksp_stack);
+  wksp_stack->ratio = min(wksp_stack->ratio + 0.1f, 1.9f);
 }
 
-void wm_restart(__attribute__((unused)) Arg arg) {}
+void mon_roll_l(__attribute__((unused)) Arg arg) {
+  mon_stack = mon_stack->next;
+}
+
+void mon_roll_r(__attribute__((unused)) Arg arg) {
+  mon_stack = mon_stack->prev;
+}
+
+void mon_swap(Arg) {}
+
+void wm_restart(__attribute__((unused)) Arg arg) { init(); }
 
 void wm_logout(__attribute__((unused)) Arg arg) { quit(); }
 
