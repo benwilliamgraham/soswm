@@ -21,7 +21,7 @@ moving between windows/workspaces, the active window and workspaces revolve
 around you.
 
 Both the window and workspace stack supports several operations to reorder the
-stack.
+stack:
 
 * Push: Add a new item onto TOS
 * Pop: Remove an item from TOS 
@@ -30,18 +30,47 @@ stack.
 * Roll right: Take the item at the bottom of the stack and move it to TOS
 * Move: Take the TOS item from one stack and put it at the TOS of another
 
-Monitors are also stored on a stack that can be similarly manipulated to set
-the active monitor.
+Monitors are also stored on a stack that can be similarly manipulated to change
+each one's precedence.
 
 Workspaces have further functionality to handle the way in which windows are
 drawn. A fullscreen in which only the active window for the given workspace can
 be enabled. Also, for cases where there are more than one window in a workspace,
 the windows will be drawn with the active window to the left, and each
 successive window taking up a ratio of the remaining screen space. This ratio
-can be ajusted by 'shrinking' or 'growing' a workspace, with the default value
+can be adjusted by 'shrinking' or 'growing' a workspace, with the default value
 existing in the configuration. Finally, the gaps between windows can be changed.
 
 ## Configuration
 
 The file `config.c` contains the ability to configure the default programs,
 keybinds and graphical settings for soswm. Edit the file and re-install. 
+
+The following functions are made availible for keybinds:
+
+* `window_push`: Push a window with the given command of type `char *[]`
+* `window_pop`: Pop the TOS window
+* `window_swap`: Swap window at TOS with TOS+n given n of type `unsigned int`
+* `window_roll_l`: Roll the window stack left
+* `window_roll_r`: Roll the window stack right
+* `window_move`: Move TOS window to workspace TOS+n given n of type `unsigned
+int`, or into a new workspace if n is 0
+* `workspace_push`: Push a new workspace
+* `workspace_pop`: Pop the TOS workspace if it is empty
+* `workspace_swap`: Swap workspace at TOS with TOS+n given n of type `unsigned
+int`
+* `workspace_roll_l`: Roll the workspace stack left
+* `workspace_roll_r`: Roll the workspace stack right
+* `workspace_fullscreen`: Toggle if a workspace is fullscreen
+* `workspace_shrink`: Decrease the ratios between successive windows
+* `workspace_grow`: Increase the ratios between successive windows
+* `mon_swap`: Swap monitor at TOS with TOS+n given n of type `unsigned int`
+* `mon_roll_l`: Roll the monitor stack left
+* `mon_roll_r`: Roll the monitor stack right
+* `wm_restart`: Refresh the window manager
+* `wm_logout`: Exit the window manager
+
+## TODOs
+* Initial split direction control
+* Xinerama support
+* Mouse window selection
