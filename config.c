@@ -15,6 +15,7 @@ void window_move(Arg);
 
 /* Workspace manipulation functions */
 void workspace_push(Arg);
+void workspace_pop(Arg);
 void workspace_swap(Arg);
 void workspace_roll_l(Arg);
 void workspace_roll_r(Arg);
@@ -54,6 +55,7 @@ struct KeyBind {
     {"7", Mod4Mask, window_swap, {.i = 7}},
     {"8", Mod4Mask, window_swap, {.i = 8}},
     {"9", Mod4Mask, window_swap, {.i = 9}},
+    {"n", Mod4Mask | ControlMask, window_move, {.i = 0}},
     {"1", Mod4Mask | ControlMask, window_move, {.i = 1}},
     {"2", Mod4Mask | ControlMask, window_move, {.i = 2}},
     {"3", Mod4Mask | ControlMask, window_move, {.i = 3}},
@@ -74,6 +76,7 @@ struct KeyBind {
 
     /* Workspace manipulation */
     {"n", Mod4Mask | ShiftMask, workspace_push},
+    {"q", Mod4Mask | ShiftMask, workspace_pop},
     {"f", Mod4Mask | ShiftMask, workspace_fullscreen},
     {"h", Mod4Mask | ShiftMask, workspace_shrink},
     {"l", Mod4Mask | ShiftMask, workspace_grow},
