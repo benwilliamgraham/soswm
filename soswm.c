@@ -291,7 +291,7 @@ void init() {
 
   /* bind keys */
   for (KeyBind *k = keybinds; k < keybinds + num_keybinds; k++) {
-    k->keycode = XKeysymToKeycode(dpy, XStringToKeysym(k->key));
+    k->keycode = XKeysymToKeycode(dpy, k->key);
     XGrabKey(dpy, k->keycode, k->mask, root, True, GrabModeAsync,
              GrabModeAsync);
   }
