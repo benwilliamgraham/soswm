@@ -403,6 +403,8 @@ void window_move(Arg arg) {
         draw_workspace(fmon, from);
       if (tmon)
         draw_workspace(tmon, to);
+      else
+        hide_workspace(to);
     }
   }
 }
