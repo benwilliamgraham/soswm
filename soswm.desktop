@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=soswm
+Comment=stack-of-stacks window manager
+Exec=/usr/local/bin/soswm
+TryExec=/usr/local/bin/soswm
+Type=Application
+DesktopNames=soswm

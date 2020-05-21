@@ -207,7 +207,7 @@ void configure_request(XConfigureRequestEvent *e) {
   /* configure window normally */
   XWindowChanges changes;
   changes.x = e->x, changes.y = e->y, changes.width = e->width,
-  changes.height = e->height, changes.border_width = e->border_width,
+  changes.height = e->height, changes.border_width = 0,
   changes.sibling = e->above, changes.stack_mode = e->detail,
   XConfigureWindow(dpy, e->window, e->value_mask, &changes);
 

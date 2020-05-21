@@ -9,9 +9,11 @@ soswm: soswm.c config.c
 install: $(TARGET)
 	mkdir -p /usr/local/bin
 	cp -f $(TARGET) /usr/local/bin/$(TARGET)
+	mkdir -p /usr/share/xsessions
+	cp -f $(TARGET).desktop /usr/share/xsessions/$(TARGET).desktop
 
 uninstall:
-	rm /usr/local/bin/$(TARGET)
+	-rm /usr/local/bin/$(TARGET)
 
 clean:
-	rm $(TARGET) 
+	-rm $(TARGET) 

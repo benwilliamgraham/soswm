@@ -33,7 +33,7 @@ void wm_logout(Arg);
 
 /* Startup programs */
 char **programs[] = {(char *[]){
-    "feh", "--bg-scale", "/home/benwilliamgraham/Pictures/mountain.jpg", NULL}};
+    "feh", "--bg-scale", "/usr/share/backgrounds/f32/default/f32.png", NULL}};
 
 /* Keybindings */
 struct KeyBind {
@@ -103,7 +103,13 @@ struct KeyBind {
     {XK_space,
      Mod4Mask,
      window_push,
-     {.s = (char *[]){"rofi", "-show", "drun", NULL}}},
+     {.s = (char *[]){"gnome-software", NULL}}},
+    {XK_s,
+     Mod4Mask,
+     window_push,
+     {.s = (char *[]){"gnome-control-center", NULL}}},
+    {XK_c, Mod4Mask, window_push, {.s = (char *[]){"google-chrome", NULL}}},
+    {XK_f, Mod4Mask, window_push, {.s = (char *[]){"nautilus", NULL}}},
     {XK_t, Mod4Mask, window_push, {.s = (char *[]){"kitty", NULL}}},
     {XK_e, Mod4Mask, window_push, {.s = (char *[]){"kitty", "nvim", NULL}}},
 
