@@ -32,8 +32,10 @@ void wm_restart(Arg);
 void wm_logout(Arg);
 
 /* Startup programs */
-char **programs[] = {(char *[]){
-    "feh", "--bg-scale", "/usr/share/backgrounds/f32/default/f32.png", NULL}};
+char **programs[] = {(char *[]){"feh", "--bg-scale",
+                                "/usr/share/backgrounds/f32/default/f32.png",
+                                NULL},
+                     (char *[]){"gnome-flashback", NULL}};
 
 /* Keybindings */
 struct KeyBind {
@@ -98,6 +100,10 @@ struct KeyBind {
     {XK_9, Mod4Mask | Mod1Mask, mon_swap, {.i = 9}},
     {XK_r, Mod4Mask | Mod1Mask, wm_restart},
     {XK_l, Mod4Mask | Mod1Mask, wm_logout},
+    {XK_s,
+     Mod4Mask | Mod1Mask,
+     window_push,
+     {.s = (char *[]){"systemctl", "suspend", NULL}}},
 
     /* Launchers */
     {XK_space,
@@ -107,7 +113,7 @@ struct KeyBind {
     {XK_s,
      Mod4Mask,
      window_push,
-     {.s = (char *[]){"gnome-control-center", NULL}}},
+     {.s = (char *[]){"gnome-control-center", "sound", NULL}}},
     {XK_c, Mod4Mask, window_push, {.s = (char *[]){"google-chrome", NULL}}},
     {XK_f, Mod4Mask, window_push, {.s = (char *[]){"nautilus", NULL}}},
     {XK_t, Mod4Mask, window_push, {.s = (char *[]){"kitty", NULL}}},
@@ -128,12 +134,7 @@ struct KeyBind {
      0,
      window_push,
      {.s = (char *[]){"pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"}}},
-    {XK_Print,
-     0,
-     window_push,
-     {.s = (char *[]){"import",
-                      "~/Pictures/screenshot`date +%Y-%m-%d_%H:%M:%S`.png",
-                      NULL}}}};
+    {XK_Print, 0, window_push, {.s = (char *[]){"gnome-screenshot", NULL}}}};
 
 /* Graphical customization */
 const int gaps = 8;
