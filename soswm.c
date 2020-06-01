@@ -143,8 +143,9 @@ SWindow *nth_window(unsigned int n) {
 }
 
 void launch_window(char **cmd) {
-  pid_t pid = fork();
-  if (!pid) {
+  if (!fork()) {
+    if (dpy)
+      close(ConnectionNumber(dpy));
     execvp(cmd[0], cmd);
     fprintf(stderr, "soswm: Unnable to run '%s'\n", cmd[0]);
     exit(0);
@@ -299,6 +300,9 @@ void init() {
   /* launch startup programs */
   for (char ***p = programs; p < programs + num_programs; p++)
     launch_window(*p);
+
+  /* perform a full redraw, ensuring that any changes are shown */
+  draw_all(False, False);
 }
 
 void run() {

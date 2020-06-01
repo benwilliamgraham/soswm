@@ -116,6 +116,7 @@ struct KeyBind {
      {.s = (char *[]){"gnome-control-center", "sound", NULL}}},
     {XK_c, Mod4Mask, window_push, {.s = (char *[]){"google-chrome", NULL}}},
     {XK_f, Mod4Mask, window_push, {.s = (char *[]){"nautilus", NULL}}},
+    {XK_z, Mod4Mask, window_push, {.s = (char *[]){"zoom", NULL}}},
     {XK_t, Mod4Mask, window_push, {.s = (char *[]){"kitty", NULL}}},
     {XK_e, Mod4Mask, window_push, {.s = (char *[]){"kitty", "nvim", NULL}}},
 
