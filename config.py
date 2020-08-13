@@ -1,7 +1,4 @@
-import soswm
-from soswm import Key
-from Xlib import XK
-
-soswm.grab_keys({
-    Key(XK.XK_A): print("I've been pressed")
+grab_keys({
+    KeyChord(XK.XK_A): lambda: print("I've been pressed"),
+    KeyChord(XK.XK_A, X.ShiftMask): lambda: print("Pressed with shift"),
 })

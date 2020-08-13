@@ -2,7 +2,7 @@
 
 from Xlib import X, XK, display, xobject
 from Xlib.ext import randr
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 
 class Stack:
@@ -65,30 +65,44 @@ class Window:
     """Window class."""
 
 
-class Key:
-    """Key class."""
+class _Chord:
+    """Chord class."""
 
-    def __init__(self, key: int, modifiers: List[int]):
-        self.key = key
-        self.modifiers = modifiers
-        self._keycode = _DISPLAY.keysym_to_keycodes(key)
-        self._modcode = 0
-        for modifier in modifiers:
-            self._modcode |= modifier
+    def __init__(self, keycode, modcode):
+        self.keycode = keycode
+        self.modcode = modcode
+
+    def __eq__(self, other) -> bool:
+        return self.keycode == other.keycode and self.modcode == other.modcode
+
+    def __hash__(self) -> int:
+        return hash((self.modcode, self.keycode))
 
     def grab(self):
         """Capture key when pressed."""
         _ROOT.grab_key(
-            self._keycode, self._modcode, True, X.GrabModeAsync, X.GrabModeAsync
+            self.keycode, self.modcode, True, X.GrabModeAsync, X.GrabModeAsync
         )
 
     def ungrab(self):
         """Don't capture key when pressed."""
-        _ROOT.ungrab_keys(self._keycode, self._modcode)
+        _ROOT.ungrab_key(self.keycode, self.modcode)
+
+
+class KeyChord(_Chord):
+    """Key class."""
+
+    def __init__(self, key: Optional[int], *modifiers: int):
+        modcode = 0
+        for modifier in modifiers:
+            modcode |= modifier
+        super().__init__(_DISPLAY.keysym_to_keycode(key), modcode)
 
 
 def update():
     """Update root window, capture monitors, and load config."""
+    global _ROOT
+
     # capture and setup root
     _ROOT = _DISPLAY.screen().root
     _ROOT.set_wm_name("soswm")
@@ -100,6 +114,10 @@ def update():
     # TODO
 
     # load config
+    try:
+        exec(open("config.py").read(), globals())
+    except Exception as e:
+        print(f"Error while loading config file: {e}")
 
 
 def grab_keys(keys):
@@ -120,9 +138,7 @@ def _run():
     """Run the main WM loop."""
     while True:
         if _DISPLAY.pending_events():
-            print("GOT EVENT", _DISPLAY.pending_events())
             event = _DISPLAY.next_event()
-            print(event, type(event))
             try:
                 {
                     X.ConfigureRequest: _configure_request,
@@ -139,7 +155,11 @@ def _configure_request(event: display.event.ConfigureRequest):
 
 
 def _key_press(event: display.event.KeyPress):
-    print(event)
+    try:
+        chord = _Chord(event.detail, event.state)
+        _KEYMAP[chord]()
+    except KeyError:
+        print(f"Unknown keychord: {chord}")
 
 
 def _map_request(event: display.event.MapRequest):
@@ -165,6 +185,6 @@ def logout():
 if __name__ == "__main__":
     _DISPLAY: display.Display = display.Display()
     _ROOT: xobject.drawable.Window
-    _KEYMAP: Dict[Key, Callable] = {}
+    _KEYMAP: Dict[_Chord, Callable] = {}
     update()
     _run()
