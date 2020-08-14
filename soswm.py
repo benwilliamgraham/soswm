@@ -3,6 +3,8 @@
 from Xlib import X, XK, display, xobject
 from Xlib.ext import randr
 from typing import Any, Callable, Dict, List, Optional
+import subprocess
+import sys
 
 
 class Stack:
@@ -11,23 +13,27 @@ class Stack:
     def __init__(self) -> None:
         self.items: List[Any] = []
 
-    def push(self, item: Any):
+    def peak(self, n: int = 0) -> Any:
+        """View the item at TOS+n."""
+        return self.items[-1 - n]
+
+    def push(self, item: Any) -> None:
         """Add a new item onto TOS."""
         self.items.append(item)
 
-    def pop(self, item: Any):
+    def pop(self) -> Any:
         """Remove an item from TOS."""
-        self.items.pop()
+        return self.items.pop()
 
-    def swap(self, n: int):
+    def swap(self, n: int) -> None:
         """Swap the position of the items at TOS and TOS+n."""
         self.items[-1 - n], self.items[-1] = self.items[-1], self.items[-1 - n]
 
-    def roll_l(self):
+    def roll_l(self) -> None:
         """Take the item at TOS and move it to the bottom of the stack."""
         self.items = self.items[-1:] + self.items[:-1]
 
-    def roll_r(self):
+    def roll_r(self) -> None:
         """Take the item at the bottom of the stack and move it to TOS."""
         self.items = self.items[:1] + self.items[1:]
 
@@ -56,13 +62,38 @@ class WindowStack(Stack):
 class Monitor:
     """Monitor class."""
 
+    def __init__(self, x, y, width, height):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+
 
 class Workspace:
     """Workspace class."""
 
+    def __init__(self):
+        self.windows: WindowStack = WindowStack()
+
 
 class Window:
     """Window class."""
+
+    def __init__(self, x_window: xobject.drawable.Window):
+        self.x_window: xobject.drawable.Window = x_window
+
+    def transform(
+        self, x: int, y: int, width: Optional[int] = None, height: Optional[int] = None
+    ):
+        if width is None and height is None:
+            self.x_window.move_window(x, y)
+        else:
+            self.x_window.move_resize_window(
+                x,
+                y,
+                width if width is not None else self.x_window.width,
+                height if height is not None else self.x_window.height,
+            )
 
 
 class _Chord:
@@ -101,7 +132,7 @@ class KeyChord(_Chord):
 
 def update():
     """Update root window, capture monitors, and load config."""
-    global _ROOT
+    global _ROOT, _MONITORS
 
     # capture and setup root
     _ROOT = _DISPLAY.screen().root
@@ -112,12 +143,16 @@ def update():
 
     # capture monitors
     # TODO
+    _MONITORS = MonitorStack()
+    tmp_mons = [[1920, 0, 1920, 1080], [0, 0, 1920, 1080]]
+    for monitor in tmp_mons:
+        _MONITORS.push(Monitor(monitor[0], monitor[1], monitor[2], monitor[3]))
 
     # load config
     try:
         exec(open("config.py").read(), globals())
     except Exception as e:
-        print(f"Error while loading config file: {e}")
+        print(f"Error while loading config file: {e}", file=sys.stderr)
 
 
 def grab_keys(keys):
@@ -135,7 +170,6 @@ def grab_keys(keys):
 
 
 def _run():
-    """Run the main WM loop."""
     while True:
         if _DISPLAY.pending_events():
             event = _DISPLAY.next_event()
@@ -147,11 +181,11 @@ def _run():
                     X.UnmapNotify: _unmap_notify,
                 }[event.type](event)
             except KeyError:
-                print(f"Unknown event type: {event}")
+                pass
 
 
 def _configure_request(event: display.event.ConfigureRequest):
-    pass
+    print(event)
 
 
 def _key_press(event: display.event.KeyPress):
@@ -159,19 +193,25 @@ def _key_press(event: display.event.KeyPress):
         chord = _Chord(event.detail, event.state)
         _KEYMAP[chord]()
     except KeyError:
-        print(f"Unknown keychord: {chord}")
+        print(f"Unknown keychord: {chord}", file=sys.stderr)
 
 
 def _map_request(event: display.event.MapRequest):
-    pass
+    print(event)
+    event.window.map()
+    print(dir(event.window))
 
 
 def _unmap_notify(event: display.event.UnmapNotify):
-    pass
+    print(event)
 
 
 def launch(cmd, *args):
     """Run a system command."""
+    try:
+        subprocess.Popen([cmd, *args])
+    except Exception as e:
+        print(f"Error launching application: {e}", file=sys.stderr)
 
 
 def kill():
@@ -181,10 +221,18 @@ def kill():
 def logout():
     """Log out of the WM."""
 
+_DISPLAY: display.Display
+_ROOT: xobject.drawable.Window
+_MONITORS: MonitorStack
+_WORKSPACES: WorkspaceStack
+_KEYMAP: Dict[_Chord, Callable]
 
 if __name__ == "__main__":
-    _DISPLAY: display.Display = display.Display()
-    _ROOT: xobject.drawable.Window
-    _KEYMAP: Dict[_Chord, Callable] = {}
+    try:
+        _DISPLAY = display.Display()
+    except Exception as e:
+        print(f"Error while connecting to display: {e}")
+    _KEYMAP = {}
+    _WORKSPACES = WorkspaceStack()
     update()
     _run()
