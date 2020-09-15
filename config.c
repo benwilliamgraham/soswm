@@ -135,7 +135,11 @@ struct KeyBind {
      0,
      window_push,
      {.s = (char *[]){"pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"}}},
-    {XK_Print, 0, window_push, {.s = (char *[]){"gnome-screenshot", NULL}}}};
+    {XK_Print, 0, window_push, {.s = (char *[]){"gnome-screenshot", NULL}}},
+    {XK_Print,
+     Mod4Mask,
+     window_push,
+     {.s = (char *[]){"gnome-screenshot", "-a", NULL}}}};
 
 /* Graphical customization */
 const int gaps = 8;
