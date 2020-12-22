@@ -222,10 +222,17 @@ void configure_request(XConfigureRequestEvent *e) {
 
 void map_request(XMapRequestEvent *e) {
   XMapWindow(dpy, e->window);
+
+  /* check if the window exists */
+  SMonitor *mon;
+  SWorkspace *wksp;
+  SWindow *win;
+  if (find_window(e->window, &mon, &wksp, &win))
+    return;
+
+  /* Otherwise, create a new window and redraw */
   SWindow *new = malloc(sizeof(SWindow));
   new->win = e->window;
-
-  /* add the new window to TOS and redraw */
   if (wksp_stack->win_stack)
     new->prev = wksp_stack->win_stack->prev, new->next = wksp_stack->win_stack;
   else
@@ -260,9 +267,10 @@ void init() {
 
   /* clear existing monitors */
   for (SMonitor *mon = mon_stack, *next; mon; mon = next) {
-    next = (mon->next == mon_stack) ? mon->next : NULL;
+    next = (mon->next != mon_stack) ? mon->next : NULL;
     free(mon);
   }
+  mon_stack = NULL;
 
   /* create new monitors */
   int n_mons;
