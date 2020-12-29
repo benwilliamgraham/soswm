@@ -18,6 +18,7 @@ const unsigned int num_keybinds = sizeof(keybinds) / sizeof(*keybinds),
 
 typedef struct SWindow SWindow;
 struct SWindow {
+  Bool mapped;
   Window win;
   SWindow *prev, *next;
 };
@@ -52,29 +53,37 @@ int x_error(Display *dpy, XErrorEvent *err) {
 void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
   if (tgt->win_stack) {
     if (tgt->fullscreen || tgt->win_stack == tgt->win_stack->next) {
-      XMapWindow(dpy, tgt->win_stack->win);
+      if (!tgt->win_stack->mapped) {
+        tgt->win_stack->mapped = True;
+        XMapWindow(dpy, tgt->win_stack->win);
+      }
       XMoveResizeWindow(dpy, tgt->win_stack->win, mon->x, mon->y, mon->w,
                         mon->h);
       /* hide any remaining windows */
       for (SWindow *win = tgt->win_stack->next; win != tgt->win_stack;
-           win = win->next)
+           win = win->next) {
+        win->mapped = False;
         XUnmapWindow(dpy, win->win);
+      }
     } else {
       Bool v = True;
       unsigned int x = mon->x + gaps / 2, y = mon->y + gaps / 2,
                    w = mon->w - gaps, h = mon->h - gaps;
       SWindow *win;
       for (win = tgt->win_stack; win->next != tgt->win_stack; win = win->next) {
+        if (!win->mapped) {
+          win->mapped = True;
+          XMapWindow(dpy, win->win);
+        }
         if (v) {
           int lw = tgt->ratio * w / 2;
-          XMapWindow(dpy, win->win);
+          /* ensure the window is visible */
           XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2,
                             lw - gaps, h - gaps);
           w -= lw;
           x += lw;
         } else {
           int lh = tgt->ratio * h / 2;
-          XMapWindow(dpy, win->win);
           XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, w - gaps,
                             lh - gaps);
           h -= lh;
@@ -82,7 +91,10 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
         }
         v = !v;
       }
-      XMapWindow(dpy, win->win);
+      if (!win->mapped) {
+        win->mapped = True;
+        XMapWindow(dpy, win->win);
+      }
       XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, w - gaps,
                         h - gaps);
     }
@@ -99,8 +111,10 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
 
 void hide_workspace(SWorkspace *tgt) {
   for (SWindow *win = tgt->win_stack; win;
-       win = (win->next != tgt->win_stack) ? win->next : NULL)
+       win = (win->next != tgt->win_stack) ? win->next : NULL) {
+    win->mapped = False;
     XUnmapWindow(dpy, win->win);
+  }
 }
 
 void draw_all(Bool hide_prev, Bool hide_next) {
@@ -236,6 +250,7 @@ void map_request(XMapRequestEvent *e) {
 
   /* Otherwise, create a new window and redraw */
   SWindow *new = malloc(sizeof(SWindow));
+  new->mapped = True;
   new->win = e->window;
   if (wksp_stack->win_stack)
     new->prev = wksp_stack->win_stack->prev, new->next = wksp_stack->win_stack;
@@ -246,6 +261,18 @@ void map_request(XMapRequestEvent *e) {
 }
 
 void destroy_notify(XDestroyWindowEvent *e) { remove_window(e->window); }
+
+void unmap_notify(XUnmapEvent *e) {
+  /* If it wasn't the WM that told it to unmap, then remove the window */
+  SMonitor *mon;
+  SWorkspace *wksp;
+  SWindow *win;
+  if (!find_window(e->window, &mon, &wksp, &win))
+    return;
+  if (win->mapped) {
+    remove_window(e->window);
+  }
+}
 
 void key_press(XKeyPressedEvent *e) {
   for (KeyBind *k = keybinds; k < keybinds + num_keybinds; k++) {
@@ -329,6 +356,9 @@ void run() {
       break;
     case DestroyNotify:
       destroy_notify(&e->xdestroywindow);
+      break;
+    case UnmapNotify:
+      unmap_notify(&e->xunmap);
       break;
     case KeyPress:
       key_press(&e->xkey);
