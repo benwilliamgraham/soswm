@@ -52,12 +52,13 @@ int x_error(Display *dpy, XErrorEvent *err) {
 void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
   if (tgt->win_stack) {
     if (tgt->fullscreen || tgt->win_stack == tgt->win_stack->next) {
+      XMapWindow(dpy, tgt->win_stack->win);
       XMoveResizeWindow(dpy, tgt->win_stack->win, mon->x, mon->y, mon->w,
                         mon->h);
       /* hide any remaining windows */
       for (SWindow *win = tgt->win_stack->next; win != tgt->win_stack;
            win = win->next)
-        XMoveWindow(dpy, win->win, dw, dh);
+        XUnmapWindow(dpy, win->win);
     } else {
       Bool v = True;
       unsigned int x = mon->x + gaps / 2, y = mon->y + gaps / 2,
@@ -66,12 +67,14 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
       for (win = tgt->win_stack; win->next != tgt->win_stack; win = win->next) {
         if (v) {
           int lw = tgt->ratio * w / 2;
+          XMapWindow(dpy, win->win);
           XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2,
                             lw - gaps, h - gaps);
           w -= lw;
           x += lw;
         } else {
           int lh = tgt->ratio * h / 2;
+          XMapWindow(dpy, win->win);
           XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, w - gaps,
                             lh - gaps);
           h -= lh;
@@ -79,6 +82,7 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
         }
         v = !v;
       }
+      XMapWindow(dpy, win->win);
       XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, w - gaps,
                         h - gaps);
     }
@@ -96,7 +100,7 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
 void hide_workspace(SWorkspace *tgt) {
   for (SWindow *win = tgt->win_stack; win;
        win = (win->next != tgt->win_stack) ? win->next : NULL)
-    XMoveWindow(dpy, win->win, dw, dh);
+    XUnmapWindow(dpy, win->win);
 }
 
 void draw_all(Bool hide_prev, Bool hide_next) {
@@ -243,8 +247,6 @@ void map_request(XMapRequestEvent *e) {
 
 void destroy_notify(XDestroyWindowEvent *e) { remove_window(e->window); }
 
-void unmap_notify(XUnmapEvent *e) { remove_window(e->window); }
-
 void key_press(XKeyPressedEvent *e) {
   for (KeyBind *k = keybinds; k < keybinds + num_keybinds; k++) {
     if ((k->mask == e->state) && (k->keycode == e->keycode))
@@ -327,9 +329,6 @@ void run() {
       break;
     case DestroyNotify:
       destroy_notify(&e->xdestroywindow);
-      break;
-    case UnmapNotify:
-      unmap_notify(&e->xunmap);
       break;
     case KeyPress:
       key_press(&e->xkey);
