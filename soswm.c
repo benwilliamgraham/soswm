@@ -66,7 +66,8 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
         XUnmapWindow(dpy, win->win);
       }
     } else {
-      Bool v = True;
+      /* Split vertically if width >= height, horizontally otherwise */
+      Bool v = mon->w >= mon->h;
       unsigned int x = mon->x + gaps / 2, y = mon->y + gaps / 2,
                    w = mon->w - gaps, h = mon->h - gaps;
       SWindow *win;
