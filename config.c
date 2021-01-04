@@ -32,9 +32,8 @@ void wm_restart(Arg);
 void wm_logout(Arg);
 
 /* Startup programs */
-char **programs[] = {(char *[]){"feh", "--bg-scale",
-                                "/usr/share/backgrounds/f32/default/f32.png",
-                                NULL},
+char **programs[] = {
+/* (char *[]){"feh", "--bg-scale", "/usr/share/backgrounds/f32/default/f32.png", NULL}, */
                      (char *[]){"gnome-flashback", NULL}};
 
 /* Keybindings */
@@ -109,7 +108,7 @@ struct KeyBind {
     {XK_space,
      Mod4Mask,
      window_push,
-     {.s = (char *[]){"gnome-software", NULL}}},
+     {.s = (char *[]){"rofi", "-show", "run", NULL}}},
     {XK_s,
      Mod4Mask,
      window_push,
@@ -142,5 +141,5 @@ struct KeyBind {
      {.s = (char *[]){"gnome-screenshot", "-a", NULL}}}};
 
 /* Graphical customization */
-const int gaps = 8;
+const int gaps = 0;
 const float def_ratio = 1.f;
