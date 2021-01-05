@@ -70,7 +70,7 @@ int`
 * `mon_swap`: Swap monitor at TOS with TOS+n given n of type `unsigned int`
 * `mon_roll_l`: Roll the monitor stack left
 * `mon_roll_r`: Roll the monitor stack right
-* `wm_refresh`: Refresh the window manager, display and monitor information (this can be used when the number/orientation of monitors has changed)
+* `wm_refresh`: Refresh the window manager's display and monitor information (this can be used when the number/orientation of monitors has changed)
 * `wm_replace`: Destroy the current instance of the window manager, starting a new one (this can be used to update the configuration without destroying the existing windows)
 * `wm_logout`: Exit the window manager
 

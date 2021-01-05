@@ -11,7 +11,6 @@
 
 /* -- Global variables and structures -- */
 Display *dpy = NULL;
-unsigned int dw, dh;
 Window root = None;
 Atom WM_PROTOCOLS = None, WM_DELETE_WINDOW = None;
 
@@ -283,19 +282,7 @@ void key_press(XKeyPressedEvent *e) {
   }
 }
 
-void init() {
-  /* initialize display */
-  if (!dpy)
-    if (!(dpy = XOpenDisplay(0x0))) {
-      fprintf(stderr, "soswm: Cannot open display\n");
-      exit(1);
-    }
-  Screen *scr = XDefaultScreenOfDisplay(dpy);
-  dw = XWidthOfScreen(scr), dh = XHeightOfScreen(scr);
-  root = DefaultRootWindow(dpy);
-  XSetErrorHandler(x_error);
-  XSelectInput(dpy, root, SubstructureNotifyMask | SubstructureRedirectMask);
-
+void get_monitor_info() {
   /* clear existing monitors */
   for (SMonitor *mon = mon_stack, *next; mon; mon = next) {
     next = (mon->next != mon_stack) ? mon->next : NULL;
@@ -316,27 +303,40 @@ void init() {
       new->prev = new->next = new;
     mon_stack = new;
   }
+}
 
-  /* create initial workspace if none exists */
-  if (!wksp_stack) {
-    wksp_stack = malloc(sizeof(SWorkspace));
-    wksp_stack->fullscreen = False, wksp_stack->ratio = default_win_ratio,
-    wksp_stack->win_stack = NULL, wksp_stack->prev = wksp_stack,
-    wksp_stack->next = wksp_stack;
+void init() {
+  /* initialize display */
+  if (!(dpy = XOpenDisplay(0x0))) {
+    fprintf(stderr, "soswm: Cannot open display\n");
+    exit(1);
   }
+  root = DefaultRootWindow(dpy);
+  XSetErrorHandler(x_error);
+  XSelectInput(dpy, root, SubstructureNotifyMask | SubstructureRedirectMask);
+
+  /* Setup the monitors */
+  get_monitor_info();
+
+  /* create initial workspace */
+  wksp_stack = malloc(sizeof(SWorkspace));
+  wksp_stack->fullscreen = False, wksp_stack->ratio = default_win_ratio,
+  wksp_stack->win_stack = NULL, wksp_stack->prev = wksp_stack,
+  wksp_stack->next = wksp_stack;
 
   /* Loop through windows, ensuring that all of them have a workspace */
   unsigned int num_wins;
   Window root_win, parent_win, *wins;
-  XQueryTree(dpy, root, &root_win, &parent_win, &wins, &num_wins);
-  SMonitor *_mon;
-  SWorkspace *_wksp;
-  SWindow *_win;
-  for (Window *win = wins; win < wins + num_wins; win++) {
-    if (!find_window(*win, &_mon, &_wksp, &_win)) {
-      XMapWindow(dpy, *win);
-      new_window(*win);
+  if (XQueryTree(dpy, root, &root_win, &parent_win, &wins, &num_wins)) {
+    for (Window *win = wins; win < wins + num_wins; win++) {
+      XWindowAttributes attrs;
+      if (XGetWindowAttributes(dpy, *win, &attrs) && !attrs.override_redirect &&
+          attrs.map_state == IsViewable) {
+        new_window(*win);
+      }
     }
+    if (wins)
+      XFree(wins);
   }
 
   /* initialize communication protocols */
@@ -353,7 +353,7 @@ void init() {
   /* launch startup routine */
   startup();
 
-  /* perform a full redraw, ensuring that any changes are shown */
+  /* draw all initial windows */
   draw_all(False, False);
 }
 
@@ -554,7 +554,10 @@ void mon_roll_r(__attribute__((unused)) Arg arg) {
   draw_all(False, False);
 }
 
-void wm_refresh(__attribute__((unused)) Arg arg) { init(); }
+void wm_refresh(__attribute__((unused)) Arg arg) {
+  get_monitor_info();
+  draw_all(False, False);
+}
 
 void wm_replace(__attribute__((unused)) Arg arg) {
   execlp("soswm", "soswm", NULL);
