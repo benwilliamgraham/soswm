@@ -4,7 +4,7 @@ LIBS = -lX11 -lXrandr
 TARGET = soswm
 
 soswm: soswm.c config.c
-	$(CC) $(CFLAGS) $(LIBS) -o $(TARGET) $< 
+	$(CC) $(CFLAGS) $(LIBS) -o $(TARGET) $^
 
 install: $(TARGET)
 	mkdir -p /usr/local/bin
@@ -16,4 +16,4 @@ uninstall:
 	-rm /usr/local/bin/$(TARGET)
 
 clean:
-	-rm $(TARGET) 
+	-rm $(TARGET)

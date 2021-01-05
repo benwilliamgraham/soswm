@@ -6,7 +6,10 @@ soswm is a small and fast dynamic window manager.
 
 ## Installation
 
-Run `[sudo] make clean install` to clean, compile, and install soswm.
+First, create a `config.c` file. The included `example.config.c` can be used as
+a template.
+
+Next, run `[sudo] make clean install` to clean, compile, and install soswm.
 
 ## Functionality
 
@@ -48,7 +51,7 @@ keybinds and graphical settings for soswm. Edit the file and re-install.
 
 The following functions are made availible for keybinds:
 
-* `window_push`: Push a window with the given command of type `char *[]`
+* `window_push`: Push a window with the given command of type `char **`
 * `window_pop`: Pop the TOS window
 * `window_swap`: Swap window at TOS with TOS+n given n of type `unsigned int`
 * `window_roll_l`: Roll the window stack left
@@ -67,10 +70,14 @@ int`
 * `mon_swap`: Swap monitor at TOS with TOS+n given n of type `unsigned int`
 * `mon_roll_l`: Roll the monitor stack left
 * `mon_roll_r`: Roll the monitor stack right
-* `wm_restart`: Refresh the window manager
+* `wm_refresh`: Refresh the window manager, display and monitor information (this can be used when the number/orientation of monitors has changed)
+* `wm_replace`: Destroy the current instance of the window manager, starting a new one (this can be used to update the configuration without destroying the existing windows)
 * `wm_logout`: Exit the window manager
 
-## TODOs
-* Initial split direction control
-* Xinerama support
-* Mouse window selection
+The macros `INT_ARG` and `PROG_ARG` can be used for arguments of type `unsigned int` and `char **` respectively.
+
+The following cosmetic variables are also editable at runtime:
+* `gap_pixels`: The number of pixels between two adjacent windows
+* `default_win_ratio`: The initial split ratio between two windows in a new workspace
+
+A custom routine to be run upon starting soswm can be modified in the function `startup`.

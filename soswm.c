@@ -1,4 +1,7 @@
-#include "config.c"
+#include "soswm.h"
+
+#include "config.h"
+
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
@@ -11,10 +14,6 @@ Display *dpy = NULL;
 unsigned int dw, dh;
 Window root = None;
 Atom WM_PROTOCOLS = None, WM_DELETE_WINDOW = None;
-
-typedef struct KeyBind KeyBind;
-const unsigned int num_keybinds = sizeof(keybinds) / sizeof(*keybinds),
-                   num_programs = sizeof(programs) / sizeof(*programs);
 
 typedef struct SWindow SWindow;
 struct SWindow {
@@ -68,8 +67,8 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
     } else {
       /* Split vertically if width >= height, horizontally otherwise */
       Bool v = mon->w >= mon->h;
-      unsigned int x = mon->x + gaps / 2, y = mon->y + gaps / 2,
-                   w = mon->w - gaps, h = mon->h - gaps;
+      unsigned int x = mon->x + gap_pixels / 2, y = mon->y + gap_pixels / 2,
+                   w = mon->w - gap_pixels, h = mon->h - gap_pixels;
       SWindow *win;
       for (win = tgt->win_stack; win->next != tgt->win_stack; win = win->next) {
         if (!win->mapped) {
@@ -79,14 +78,16 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
         if (v) {
           int lw = tgt->ratio * w / 2;
           /* ensure the window is visible */
-          XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2,
-                            lw - gaps, h - gaps);
+          XMoveResizeWindow(dpy, win->win, x + gap_pixels / 2,
+                            y + gap_pixels / 2, lw - gap_pixels,
+                            h - gap_pixels);
           w -= lw;
           x += lw;
         } else {
           int lh = tgt->ratio * h / 2;
-          XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, w - gaps,
-                            lh - gaps);
+          XMoveResizeWindow(dpy, win->win, x + gap_pixels / 2,
+                            y + gap_pixels / 2, w - gap_pixels,
+                            lh - gap_pixels);
           h -= lh;
           y += lh;
         }
@@ -96,8 +97,8 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
         win->mapped = True;
         XMapWindow(dpy, win->win);
       }
-      XMoveResizeWindow(dpy, win->win, x + gaps / 2, y + gaps / 2, w - gaps,
-                        h - gaps);
+      XMoveResizeWindow(dpy, win->win, x + gap_pixels / 2, y + gap_pixels / 2,
+                        w - gap_pixels, h - gap_pixels);
     }
   }
 
@@ -202,25 +203,32 @@ Bool find_window(Window tgt, SMonitor **mon, SWorkspace **wksp, SWindow **win) {
   return False;
 }
 
-void remove_window(Window tgt) {
-  SMonitor *mon;
-  SWorkspace *wksp;
-  SWindow *win;
-  if (find_window(tgt, &mon, &wksp, &win)) {
-    /* remove window, replacing with NULL if there are none left */
-    if (win == win->next)
-      wksp->win_stack = NULL;
-    else {
-      win->next->prev = win->prev, win->prev->next = win->next;
-      if (wksp->win_stack == win)
-        wksp->win_stack = win->next;
+void remove_window(SMonitor *mon, SWorkspace *wksp, SWindow *win) {
+  /* remove window, replacing with NULL if there are none left */
+  if (win == win->next)
+    wksp->win_stack = NULL;
+  else {
+    win->next->prev = win->prev, win->prev->next = win->next;
+    if (wksp->win_stack == win)
+      wksp->win_stack = win->next;
 
-      /* redraw if visible */
-      if (mon)
-        draw_workspace(mon, wksp);
-    }
-    free(win);
+    /* redraw if visible */
+    if (mon)
+      draw_workspace(mon, wksp);
   }
+  free(win);
+}
+
+void new_window(Window win) {
+  SWindow *new = malloc(sizeof(SWindow));
+  new->mapped = True;
+  new->win = win;
+  if (wksp_stack->win_stack)
+    new->prev = wksp_stack->win_stack->prev, new->next = wksp_stack->win_stack;
+  else
+    new->prev = new->next = new;
+  wksp_stack->win_stack = new->prev->next = new->next->prev = new;
+  draw_workspace(mon_stack, wksp_stack);
 }
 
 void configure_request(XConfigureRequestEvent *e) {
@@ -234,45 +242,38 @@ void configure_request(XConfigureRequestEvent *e) {
   /* if the window already exists, redraw it */
   SMonitor *mon;
   SWorkspace *wksp;
-  SWindow *win;
-  if (find_window(e->window, &mon, &wksp, &win) && mon)
+  SWindow *_win;
+  if (find_window(e->window, &mon, &wksp, &_win) && mon)
     draw_workspace(mon, wksp);
 }
 
 void map_request(XMapRequestEvent *e) {
   XMapWindow(dpy, e->window);
 
-  /* check if the window exists */
+  /* check if the window exists; if not, add it */
+  SMonitor *_mon;
+  SWorkspace *_wksp;
+  SWindow *_win;
+  if (!find_window(e->window, &_mon, &_wksp, &_win))
+    new_window(e->window);
+}
+
+void destroy_notify(XDestroyWindowEvent *e) {
+  /* If the window exists, destroy it */
   SMonitor *mon;
   SWorkspace *wksp;
   SWindow *win;
   if (find_window(e->window, &mon, &wksp, &win))
-    return;
-
-  /* Otherwise, create a new window and redraw */
-  SWindow *new = malloc(sizeof(SWindow));
-  new->mapped = True;
-  new->win = e->window;
-  if (wksp_stack->win_stack)
-    new->prev = wksp_stack->win_stack->prev, new->next = wksp_stack->win_stack;
-  else
-    new->prev = new->next = new;
-  wksp_stack->win_stack = new->prev->next = new->next->prev = new;
-  draw_workspace(mon_stack, wksp_stack);
+    remove_window(mon, wksp, win);
 }
-
-void destroy_notify(XDestroyWindowEvent *e) { remove_window(e->window); }
 
 void unmap_notify(XUnmapEvent *e) {
   /* If it wasn't the WM that told it to unmap, then remove the window */
   SMonitor *mon;
   SWorkspace *wksp;
   SWindow *win;
-  if (!find_window(e->window, &mon, &wksp, &win))
-    return;
-  if (win->mapped) {
-    remove_window(e->window);
-  }
+  if (find_window(e->window, &mon, &wksp, &win) && win->mapped)
+    remove_window(mon, wksp, win);
 }
 
 void key_press(XKeyPressedEvent *e) {
@@ -319,9 +320,23 @@ void init() {
   /* create initial workspace if none exists */
   if (!wksp_stack) {
     wksp_stack = malloc(sizeof(SWorkspace));
-    wksp_stack->fullscreen = False, wksp_stack->ratio = def_ratio,
+    wksp_stack->fullscreen = False, wksp_stack->ratio = default_win_ratio,
     wksp_stack->win_stack = NULL, wksp_stack->prev = wksp_stack,
     wksp_stack->next = wksp_stack;
+  }
+
+  /* Loop through windows, ensuring that all of them have a workspace */
+  unsigned int num_wins;
+  Window root_win, parent_win, *wins;
+  XQueryTree(dpy, root, &root_win, &parent_win, &wins, &num_wins);
+  SMonitor *_mon;
+  SWorkspace *_wksp;
+  SWindow *_win;
+  for (Window *win = wins; win < wins + num_wins; win++) {
+    if (!find_window(*win, &_mon, &_wksp, &_win)) {
+      XMapWindow(dpy, *win);
+      new_window(*win);
+    }
   }
 
   /* initialize communication protocols */
@@ -335,9 +350,8 @@ void init() {
              GrabModeAsync);
   }
 
-  /* launch startup programs */
-  for (char ***p = programs; p < programs + num_programs; p++)
-    launch_window(*p);
+  /* launch startup routine */
+  startup();
 
   /* perform a full redraw, ensuring that any changes are shown */
   draw_all(False, False);
@@ -374,7 +388,7 @@ void quit() {
 }
 
 /* -- Implementation-independant functions -- */
-void window_push(Arg arg) { launch_window(arg.s); }
+void window_push(Arg arg) { launch_window(arg.p); }
 
 void window_pop(__attribute__((unused)) Arg arg) {
   if (wksp_stack->win_stack)
@@ -454,7 +468,8 @@ void window_move(Arg arg) {
 void workspace_push(__attribute__((unused)) Arg arg) {
   /* create new workspace */
   SWorkspace *wksp = malloc(sizeof(SWorkspace));
-  wksp->win_stack = NULL, wksp->fullscreen = False, wksp->ratio = def_ratio;
+  wksp->win_stack = NULL, wksp->fullscreen = False,
+  wksp->ratio = default_win_ratio;
 
   /* push new workspace and redraw all, hiding the bumped workspace */
   wksp->prev = wksp_stack->prev, wksp->next = wksp_stack;
@@ -539,7 +554,11 @@ void mon_roll_r(__attribute__((unused)) Arg arg) {
   draw_all(False, False);
 }
 
-void wm_restart(__attribute__((unused)) Arg arg) { init(); }
+void wm_refresh(__attribute__((unused)) Arg arg) { init(); }
+
+void wm_replace(__attribute__((unused)) Arg arg) {
+  execlp("soswm", "soswm", NULL);
+}
 
 void wm_logout(__attribute__((unused)) Arg arg) { quit(); }
 
