@@ -77,7 +77,8 @@ int`
 The macros `INT_ARG` and `PROG_ARG` can be used for arguments of type `unsigned int` and `char **` respectively.
 
 The following cosmetic variables are also editable at runtime:
-* `gap_pixels`: The number of pixels between two adjacent windows
+* `outer_gap`: The number of pixels between a window and the edge of the screen
+* `inner_gap`: The number of pixels between two adjacent windows
 * `default_win_ratio`: The initial split ratio between two windows in a new workspace
 
 A custom routine to be run upon starting soswm can be modified in the function `startup`.

@@ -7,7 +7,8 @@
 #include <X11/Xutil.h>
 
 /* Cosmetic variables */
-extern unsigned int gap_pixels;
+extern unsigned int outer_gap;
+extern unsigned int inner_gap;
 extern float default_win_ratio;
 
 /* Key bindings */

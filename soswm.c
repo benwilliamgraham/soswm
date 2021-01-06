@@ -66,8 +66,11 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
     } else {
       /* Split vertically if width >= height, horizontally otherwise */
       Bool v = mon->w >= mon->h;
-      unsigned int x = mon->x + gap_pixels / 2, y = mon->y + gap_pixels / 2,
-                   w = mon->w - gap_pixels, h = mon->h - gap_pixels;
+      /* Calculate the outer gap, factoring in the inner gap */
+      unsigned int x = mon->x + outer_gap - inner_gap / 2,
+                   y = mon->y + outer_gap - inner_gap / 2,
+                   w = mon->w - outer_gap * 2 + inner_gap,
+                   h = mon->h - outer_gap * 2 + inner_gap;
       SWindow *win;
       for (win = tgt->win_stack; win->next != tgt->win_stack; win = win->next) {
         if (!win->mapped) {
@@ -77,16 +80,16 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
         if (v) {
           int lw = tgt->ratio * w / 2;
           /* ensure the window is visible */
-          XMoveResizeWindow(dpy, win->win, x + gap_pixels / 2,
-                            y + gap_pixels / 2, lw - gap_pixels,
-                            h - gap_pixels);
+          XMoveResizeWindow(dpy, win->win, x + inner_gap / 2,
+                            y + inner_gap / 2, lw - inner_gap,
+                            h - inner_gap);
           w -= lw;
           x += lw;
         } else {
           int lh = tgt->ratio * h / 2;
-          XMoveResizeWindow(dpy, win->win, x + gap_pixels / 2,
-                            y + gap_pixels / 2, w - gap_pixels,
-                            lh - gap_pixels);
+          XMoveResizeWindow(dpy, win->win, x + inner_gap / 2,
+                            y + inner_gap / 2, w - inner_gap,
+                            lh - inner_gap);
           h -= lh;
           y += lh;
         }
@@ -96,8 +99,8 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
         win->mapped = True;
         XMapWindow(dpy, win->win);
       }
-      XMoveResizeWindow(dpy, win->win, x + gap_pixels / 2, y + gap_pixels / 2,
-                        w - gap_pixels, h - gap_pixels);
+      XMoveResizeWindow(dpy, win->win, x + inner_gap / 2, y + inner_gap / 2,
+                        w - inner_gap, h - inner_gap);
     }
   }
 

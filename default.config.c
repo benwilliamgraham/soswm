@@ -1,7 +1,8 @@
 #include "config.h"
 #include "soswm.h"
 
-unsigned int gap_pixels = 8;
+unsigned int outer_gap = 8;
+unsigned int inner_gap = 8;
 float default_win_ratio = 1.f;
 
 KeyBind keybinds[] = {
