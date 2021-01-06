@@ -67,10 +67,10 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
       /* Split vertically if width >= height, horizontally otherwise */
       Bool v = mon->w >= mon->h;
       /* Calculate the outer gap, factoring in the inner gap */
-      unsigned int x = mon->x + outer_gap - inner_gap / 2,
-                   y = mon->y + outer_gap - inner_gap / 2,
-                   w = mon->w - outer_gap * 2 + inner_gap,
-                   h = mon->h - outer_gap * 2 + inner_gap;
+      unsigned int x = mon->x + outer_gap.left - inner_gap / 2,
+                   y = mon->y + outer_gap.top - inner_gap / 2,
+                   w = mon->w - outer_gap.right - outer_gap.left + inner_gap,
+                   h = mon->h - outer_gap.bottom - outer_gap.top + inner_gap;
       SWindow *win;
       for (win = tgt->win_stack; win->next != tgt->win_stack; win = win->next) {
         if (!win->mapped) {
@@ -80,16 +80,14 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
         if (v) {
           int lw = tgt->ratio * w / 2;
           /* ensure the window is visible */
-          XMoveResizeWindow(dpy, win->win, x + inner_gap / 2,
-                            y + inner_gap / 2, lw - inner_gap,
-                            h - inner_gap);
+          XMoveResizeWindow(dpy, win->win, x + inner_gap / 2, y + inner_gap / 2,
+                            lw - inner_gap, h - inner_gap);
           w -= lw;
           x += lw;
         } else {
           int lh = tgt->ratio * h / 2;
-          XMoveResizeWindow(dpy, win->win, x + inner_gap / 2,
-                            y + inner_gap / 2, w - inner_gap,
-                            lh - inner_gap);
+          XMoveResizeWindow(dpy, win->win, x + inner_gap / 2, y + inner_gap / 2,
+                            w - inner_gap, lh - inner_gap);
           h -= lh;
           y += lh;
         }
@@ -433,7 +431,7 @@ void window_move(Arg arg) {
 
     /* if no workspace is specified, open in new workspace */
     if (!arg.i) {
-      workspace_push((Arg)0u);
+      workspace_push(INT_ARG(0u));
       fmon = (mon_stack != mon_stack->next) ? mon_stack->next : NULL,
       from = wksp_stack->next, tmon = mon_stack, to = wksp_stack;
     }

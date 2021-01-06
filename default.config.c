@@ -1,7 +1,12 @@
 #include "config.h"
 #include "soswm.h"
 
-unsigned int outer_gap = 8;
+Gaps outer_gap = {
+    .left = 8,
+    .right = 8,
+    .top = 8,
+    .bottom = 8,
+};
 unsigned int inner_gap = 8;
 float default_win_ratio = 1.f;
 

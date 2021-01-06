@@ -7,7 +7,10 @@
 #include <X11/Xutil.h>
 
 /* Cosmetic variables */
-extern unsigned int outer_gap;
+typedef struct Gaps Gaps;
+struct Gaps {
+  unsigned int left, right, top, bottom;
+} extern outer_gap;
 extern unsigned int inner_gap;
 extern float default_win_ratio;
 
