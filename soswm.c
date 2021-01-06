@@ -67,10 +67,10 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
       /* Split vertically if width >= height, horizontally otherwise */
       Bool v = mon->w >= mon->h;
       /* Calculate the outer gap, factoring in the inner gap */
-      unsigned int x = mon->x + outer_gap.left - inner_gap / 2,
-                   y = mon->y + outer_gap.top - inner_gap / 2,
-                   w = mon->w - outer_gap.right - outer_gap.left + inner_gap,
-                   h = mon->h - outer_gap.bottom - outer_gap.top + inner_gap;
+      unsigned int x = mon->x + outer_gap.left - inner_gap / 2;
+      unsigned int y = mon->y + outer_gap.top - inner_gap / 2;
+      unsigned int w = mon->w - outer_gap.right - outer_gap.left + inner_gap;
+      unsigned int h = mon->h - outer_gap.bottom - outer_gap.top + inner_gap;
       SWindow *win;
       for (win = tgt->win_stack; win->next != tgt->win_stack; win = win->next) {
         if (!win->mapped) {
@@ -107,8 +107,9 @@ void draw_workspace(SMonitor *mon, SWorkspace *tgt) {
     XRaiseWindow(dpy, wksp_stack->win_stack->win);
     XSetInputFocus(dpy, wksp_stack->win_stack->win, RevertToParent,
                    CurrentTime);
-  } else
+  } else {
     XSetInputFocus(dpy, root, RevertToParent, CurrentTime);
+  }
 }
 
 void hide_workspace(SWorkspace *tgt) {
@@ -124,23 +125,28 @@ void draw_all(Bool hide_prev, Bool hide_next) {
   SWorkspace *wksp = wksp_stack;
   for (SMonitor *mon = mon_stack; mon && wksp;
        mon = (mon->next != mon_stack) ? mon->next : NULL,
-                wksp = (wksp->next != wksp_stack) ? wksp->next : NULL)
+                wksp = (wksp->next != wksp_stack) ? wksp->next : NULL) {
     draw_workspace(mon, wksp);
+  }
 
   /* hide the workspace before the first visible */
-  if (hide_prev && wksp)
+  if (hide_prev && wksp) {
     hide_workspace(wksp_stack->prev);
+  }
 
   /* hide the workspace following the last visible */
-  if (hide_next && wksp)
+  if (hide_next && wksp) {
     hide_workspace(wksp);
+  }
 }
 
 SMonitor *nth_monitor(unsigned int n) {
   for (SMonitor *mon = mon_stack; mon;
-       mon = (mon->next != mon_stack) ? mon->next : NULL)
-    if (!n--)
+       mon = (mon->next != mon_stack) ? mon->next : NULL) {
+    if (!n--) {
       return mon;
+    }
+  }
   return NULL;
 }
 
@@ -148,24 +154,29 @@ SWorkspace *nth_workspace(unsigned int n, SMonitor **mon) {
   *mon = mon_stack;
   for (SWorkspace *wksp = wksp_stack; wksp;
        *mon = (*mon && (*mon)->next != mon_stack) ? (*mon)->next : NULL,
-                  wksp = (wksp->next != wksp_stack) ? wksp->next : NULL)
-    if (!n--)
+                  wksp = (wksp->next != wksp_stack) ? wksp->next : NULL) {
+    if (!n--) {
       return wksp;
+    }
+  }
   return NULL;
 }
 
 SWindow *nth_window(unsigned int n) {
   for (SWindow *win = wksp_stack->win_stack; win;
-       win = (win->next != wksp_stack->win_stack) ? win->next : NULL)
-    if (!n--)
+       win = (win->next != wksp_stack->win_stack) ? win->next : NULL) {
+    if (!n--) {
       return win;
+    }
+  }
   return NULL;
 }
 
 void launch_window(char **cmd) {
   if (!fork()) {
-    if (dpy)
+    if (dpy) {
       close(ConnectionNumber(dpy));
+    }
     execvp(cmd[0], cmd);
     fprintf(stderr, "soswm: Unnable to run '%s'\n", cmd[0]);
     exit(0);
@@ -177,8 +188,9 @@ void kill_window(Window tgt) {
   Atom *protos;
   Bool found = False;
   if (XGetWMProtocols(dpy, tgt, &protos, &n)) {
-    while (!found && n--)
+    while (!found && n--) {
       found = protos[n] == WM_DELETE_WINDOW;
+    }
     XFree(protos);
   }
   if (found) {
@@ -187,8 +199,9 @@ void kill_window(Window tgt) {
     e.xclient.message_type = WM_PROTOCOLS, e.xclient.format = 32,
     e.xclient.data.l[0] = WM_DELETE_WINDOW;
     XSendEvent(dpy, tgt, False, NoEventMask, &e);
-  } else
+  } else {
     XKillClient(dpy, tgt);
+  }
 }
 
 Bool find_window(Window tgt, SMonitor **mon, SWorkspace **wksp, SWindow **win) {
@@ -196,25 +209,29 @@ Bool find_window(Window tgt, SMonitor **mon, SWorkspace **wksp, SWindow **win) {
        *mon = (*mon && (*mon)->next != mon_stack) ? (*mon)->next : NULL,
       *wksp = ((*wksp)->next != wksp_stack) ? (*wksp)->next : NULL) {
     for (*win = (*wksp)->win_stack; *win;
-         *win = ((*win)->next != (*wksp)->win_stack) ? (*win)->next : NULL)
-      if ((*win)->win == tgt)
+         *win = ((*win)->next != (*wksp)->win_stack) ? (*win)->next : NULL) {
+      if ((*win)->win == tgt) {
         return True;
+      }
+    }
   }
   return False;
 }
 
 void remove_window(SMonitor *mon, SWorkspace *wksp, SWindow *win) {
   /* remove window, replacing with NULL if there are none left */
-  if (win == win->next)
+  if (win == win->next) {
     wksp->win_stack = NULL;
-  else {
+  } else {
     win->next->prev = win->prev, win->prev->next = win->next;
-    if (wksp->win_stack == win)
+    if (wksp->win_stack == win) {
       wksp->win_stack = win->next;
+    }
 
     /* redraw if visible */
-    if (mon)
+    if (mon) {
       draw_workspace(mon, wksp);
+    }
   }
   free(win);
 }
@@ -223,10 +240,11 @@ void new_window(Window win) {
   SWindow *new = malloc(sizeof(SWindow));
   new->mapped = True;
   new->win = win;
-  if (wksp_stack->win_stack)
+  if (wksp_stack->win_stack) {
     new->prev = wksp_stack->win_stack->prev, new->next = wksp_stack->win_stack;
-  else
+  } else {
     new->prev = new->next = new;
+  }
   wksp_stack->win_stack = new->prev->next = new->next->prev = new;
   draw_workspace(mon_stack, wksp_stack);
 }
@@ -243,8 +261,9 @@ void configure_request(XConfigureRequestEvent *e) {
   SMonitor *mon;
   SWorkspace *wksp;
   SWindow *_win;
-  if (find_window(e->window, &mon, &wksp, &_win) && mon)
+  if (find_window(e->window, &mon, &wksp, &_win) && mon) {
     draw_workspace(mon, wksp);
+  }
 }
 
 void map_request(XMapRequestEvent *e) {
@@ -254,8 +273,9 @@ void map_request(XMapRequestEvent *e) {
   SMonitor *_mon;
   SWorkspace *_wksp;
   SWindow *_win;
-  if (!find_window(e->window, &_mon, &_wksp, &_win))
+  if (!find_window(e->window, &_mon, &_wksp, &_win)) {
     new_window(e->window);
+  }
 }
 
 void destroy_notify(XDestroyWindowEvent *e) {
@@ -263,8 +283,9 @@ void destroy_notify(XDestroyWindowEvent *e) {
   SMonitor *mon;
   SWorkspace *wksp;
   SWindow *win;
-  if (find_window(e->window, &mon, &wksp, &win))
+  if (find_window(e->window, &mon, &wksp, &win)) {
     remove_window(mon, wksp, win);
+  }
 }
 
 void unmap_notify(XUnmapEvent *e) {
@@ -272,14 +293,16 @@ void unmap_notify(XUnmapEvent *e) {
   SMonitor *mon;
   SWorkspace *wksp;
   SWindow *win;
-  if (find_window(e->window, &mon, &wksp, &win) && win->mapped)
+  if (find_window(e->window, &mon, &wksp, &win) && win->mapped) {
     remove_window(mon, wksp, win);
+  }
 }
 
 void key_press(XKeyPressedEvent *e) {
   for (KeyBind *k = keybinds; k < keybinds + num_keybinds; k++) {
-    if ((k->mask == e->state) && (k->keycode == e->keycode))
+    if ((k->mask == e->state) && (k->keycode == e->keycode)) {
       k->handler(k->arg);
+    }
   }
 }
 
@@ -297,11 +320,12 @@ void get_monitor_info() {
   for (XRRMonitorInfo *mon = mons; mon < mons + n_mons; mon++) {
     SMonitor *new = malloc(sizeof(SMonitor));
     new->x = mon->x, new->y = mon->y, new->w = mon->width, new->h = mon->height;
-    if (mon_stack)
+    if (mon_stack) {
       new->prev = mon_stack->prev, new->next = mon_stack,
       new->prev->next = new->next->prev = new;
-    else
+    } else {
       new->prev = new->next = new;
+    }
     mon_stack = new;
   }
 }
@@ -327,7 +351,9 @@ void init() {
 
   /* Loop through windows, ensuring that all of them have a workspace */
   unsigned int num_wins;
-  Window root_win, parent_win, *wins;
+  Window root_win;
+  Window parent_win;
+  Window *wins;
   if (XQueryTree(dpy, root, &root_win, &parent_win, &wins, &num_wins)) {
     for (Window *win = wins; win < wins + num_wins; win++) {
       XWindowAttributes attrs;
@@ -336,8 +362,9 @@ void init() {
         new_window(*win);
       }
     }
-    if (wins)
+    if (wins) {
       XFree(wins);
+    }
   }
 
   /* initialize communication protocols */
@@ -392,8 +419,9 @@ void quit() {
 void window_push(Arg arg) { launch_window(arg.p); }
 
 void window_pop(__attribute__((unused)) Arg arg) {
-  if (wksp_stack->win_stack)
+  if (wksp_stack->win_stack) {
     kill_window(wksp_stack->win_stack->win);
+  }
 }
 
 void window_swap(Arg arg) {
@@ -426,42 +454,49 @@ void window_roll_r(__attribute__((unused)) Arg arg) {
 void window_move(Arg arg) {
   SWindow *tgt = wksp_stack->win_stack;
   if (tgt) {
-    SMonitor *fmon, *tmon;
-    SWorkspace *from, *to;
+    SMonitor *fmon;
+    SMonitor *tmon;
+    SWorkspace *from;
+    SWorkspace *to;
 
     /* if no workspace is specified, open in new workspace */
     if (!arg.i) {
-      workspace_push(INT_ARG(0u));
+      workspace_push(INT_ARG(0U));
       fmon = (mon_stack != mon_stack->next) ? mon_stack->next : NULL,
       from = wksp_stack->next, tmon = mon_stack, to = wksp_stack;
     }
 
     /* otherwise find specified workspace */
-    else
+    else {
       from = wksp_stack, fmon = mon_stack, to = nth_workspace(arg.i, &tmon);
+    }
 
     if (to) {
       /* remove from old TOS */
-      if (tgt == tgt->next)
+      if (tgt == tgt->next) {
         from->win_stack = NULL;
-      else
+      } else {
         from->win_stack = tgt->prev->next = tgt->next,
         tgt->next->prev = tgt->prev;
+      }
 
       /* add to new TOS */
-      if (to->win_stack)
+      if (to->win_stack) {
         tgt->prev = to->win_stack->prev, tgt->next = to->win_stack;
-      else
+      } else {
         tgt->prev = tgt->next = tgt;
+      }
       tgt->prev->next = tgt->next->prev = to->win_stack = tgt;
 
       /* redraw */
-      if (fmon)
+      if (fmon) {
         draw_workspace(fmon, from);
-      if (tmon)
+      }
+      if (tmon) {
         draw_workspace(tmon, to);
-      else
+      } else {
         hide_workspace(to);
+      }
     }
   }
 }
@@ -502,10 +537,11 @@ void workspace_swap(Arg arg) {
 
     /* draw updated workspaces */
     draw_workspace(mon_stack, wksp_stack);
-    if (mon)
+    if (mon) {
       draw_workspace(mon, tgt);
-    else
+    } else {
       hide_workspace(tgt);
+    }
   }
 }
 
@@ -525,12 +561,12 @@ void workspace_fullscreen(__attribute__((unused)) Arg arg) {
 }
 
 void workspace_shrink(__attribute__((unused)) Arg arg) {
-  wksp_stack->ratio = max(wksp_stack->ratio - 0.1f, 0.1f);
+  wksp_stack->ratio = max(wksp_stack->ratio - 0.1F, 0.1F);
   draw_workspace(mon_stack, wksp_stack);
 }
 
 void workspace_grow(__attribute__((unused)) Arg arg) {
-  wksp_stack->ratio = min(wksp_stack->ratio + 0.1f, 1.9f);
+  wksp_stack->ratio = min(wksp_stack->ratio + 0.1F, 1.9F);
   draw_workspace(mon_stack, wksp_stack);
 }
 

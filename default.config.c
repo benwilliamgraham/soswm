@@ -8,7 +8,7 @@ Gaps outer_gap = {
     .bottom = 8,
 };
 unsigned int inner_gap = 8;
-float default_win_ratio = 1.f;
+float default_win_ratio = 1.F;
 
 KeyBind keybinds[] = {
     /* Window manipulation */

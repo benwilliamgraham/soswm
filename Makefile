@@ -17,3 +17,7 @@ uninstall:
 
 clean:
 	-rm $(TARGET)
+
+format:
+	clang-format -i *.c *.h
+	clang-tidy *.c *.h -fix -checks="-*,readability-*" --
