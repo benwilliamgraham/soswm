@@ -1,43 +1,46 @@
 #ifndef SOSWM_H
 #define SOSWM_H
 
-/* Callback function argument struct and initializer macros */
-typedef union {
-  unsigned int i;
-  char **p;
-} Arg;
+/* sosc push workspace */
+void push_workspace();
 
-#define INT_ARG(i_val)                                                         \
-  (Arg) { .i = (i_val) }
-#define PROG_ARG(...)                                                          \
-  (Arg) {                                                                      \
-    .p = (char *[]) { __VA_ARGS__, NULL }                                      \
-  }
+/* sosc pop <window | workspace> */
+void pop_window();
+void pop_workspace();
 
-/* Window manipulation functions */
-void window_push(Arg);
-void window_pop(Arg);
-void window_swap(Arg);
-void window_roll_l(Arg);
-void window_roll_r(Arg);
-void window_move(Arg);
+/* sosc swap <window | workspace | monitor> <n> */
+void swap_window(unsigned int n);
+void swap_workspace(unsigned int n);
+void swap_monitor(unsigned int n);
 
-/* Workspace manipulation functions */
-void workspace_push(Arg);
-void workspace_pop(Arg);
-void workspace_swap(Arg);
-void workspace_roll_l(Arg);
-void workspace_roll_r(Arg);
-void workspace_fullscreen(Arg);
-void workspace_shrink(Arg);
-void workspace_grow(Arg);
+/* sosc roll <window | workspace | monitor> <left | right> */
+typedef enum { ROLL_LEFT, ROLL_RIGHT } RollDirection;
+void roll_window(RollDirection dir);
+void roll_workspace(RollDirection dir);
+void roll_monitor(RollDirection dir);
 
-/* Window manager manipulation functions */
-void mon_swap(Arg);
-void mon_roll_l(Arg);
-void mon_roll_r(Arg);
-void wm_refresh(Arg);
-void wm_replace(Arg);
-void wm_logout(Arg);
+/* sosc move window <n> */
+void move_window(unsigned int n);
+
+/* sosc replace */
+void replace_wm();
+
+/* sosc logout */
+void logout_wm();
+
+/* sosc layout workspace <fullscreen | halved | toggle> */
+typedef enum { LAYOUT_FULLSCREEN, LAYOUT_HALVED, LAYOUT_TOGGLE } LayoutMode;
+void layout_workspace(LayoutMode mode);
+
+/* sosc scale workspace <bigger | smaller | reset> */
+typedef enum { SCALE_BIGGER, SCALE_SMALLER, SCALE_RESET } ScaleMode;
+void scale_workspace(ScaleMode mode);
+
+/* sosc gap <top | bottom | left | right | inner> <n> */
+void gap_top(unsigned int n);
+void gap_bottom(unsigned int n);
+void gap_left(unsigned int n);
+void gap_right(unsigned int n);
+void gap_inner(unsigned int n);
 
 #endif /* !SOSWM_H */

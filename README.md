@@ -13,6 +13,22 @@ Next, run `[sudo] make clean install` to clean, compile, and install soswm.
 
 ## Functionality
 
+Commands exist in the form `sosc <action> <actor> [argument]`.
+
+```
+sosc push workspace
+sosc pop <window | workspace>
+sosc swap <window | workspace | monitor> <n>
+sosc roll <window | workspace | monitor> <left | right>
+sosc move window <n>
+sosc replace wm
+sosc logout wm
+sosc layout workspace <fullscreen | halved | toggle>
+sosc scale workspace [ bigger | smaller | reset ]
+sosc gap <top | bottom | left | right | inner> <n>
+sosc --help
+```
+
 As the name suggests, soswm is built around stacks.
 
 Rather than having named workspaces, soswm uses a stack of workspaces, with the
