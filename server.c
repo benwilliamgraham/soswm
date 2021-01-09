@@ -209,7 +209,8 @@ struct Command {
 
 /* Socket read-write macros to eliminate repeated code */
 #define sock_read(socket, dest) read(socket, dest, sizeof(dest) - 1)
-#define sock_writef(socket, dest, ...) write(socket, dest, snprintf(dest, sizeof(dest), __VA_ARGS__) + 1)
+#define sock_writef(socket, dest, ...)                                         \
+  write(socket, dest, snprintf(dest, sizeof(dest), __VA_ARGS__) + 1)
 
 void server_exec_commmands() {
   // accept a new connection
@@ -237,7 +238,7 @@ void server_exec_commmands() {
     // if the end of the list is reached, return an error
     if (!cmd->action) {
       sock_writef(data_socket, reply, "Invalid action: `%s`\nExpected: %s\n",
-                           request, usage);
+                  request, usage);
       goto clean_up;
     }
 
@@ -249,7 +250,7 @@ void server_exec_commmands() {
         // if the end of the list is reached, return and error
         if (!actor->actor) {
           sock_writef(data_socket, reply, "Invalid actor: `%s`\nExpected: %s\n",
-                       request, cmd->usage);
+                      request, cmd->usage);
           goto clean_up;
         }
 
@@ -261,8 +262,8 @@ void server_exec_commmands() {
             const char *arg_usage_err = cmd->arg_parser(&arg, request);
             if (arg_usage_err) {
               sock_writef(data_socket, reply,
-                                   "Invalid arg: `%s`\nExpected: %s\n", request,
-                                   arg_usage_err);
+                          "Invalid arg: `%s`\nExpected: %s\n", request,
+                          arg_usage_err);
             } else {
               actor->handler_uint(arg);
             }
