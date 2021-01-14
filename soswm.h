@@ -1,46 +1,40 @@
 #ifndef SOSWM_H
 #define SOSWM_H
 
-/* sosc push workspace */
-void push_workspace();
+/* sosc push stack */
+void push_stack();
 
-/* sosc pop <window | workspace> */
+/* sosc pop <window | stack> */
 void pop_window();
-void pop_workspace();
+void pop_stack();
 
-/* sosc swap <window | workspace | monitor> <n> */
+/* sosc swap <window | stack> <0...inf> */
 void swap_window(unsigned int n);
-void swap_workspace(unsigned int n);
-void swap_monitor(unsigned int n);
+void swap_stack(unsigned int n);
 
-/* sosc roll <window | workspace | monitor> <left | right> */
-typedef enum { ROLL_LEFT, ROLL_RIGHT } RollDirection;
+/* sosc roll <window | stack> <top | bottom> */
+typedef enum { ROLL_TOP, ROLL_BOTTOM } RollDirection;
 void roll_window(RollDirection dir);
-void roll_workspace(RollDirection dir);
-void roll_monitor(RollDirection dir);
+void roll_stack(RollDirection dir);
 
-/* sosc move window <n> */
+/* sosc move window <0...inf> */
 void move_window(unsigned int n);
 
-/* sosc replace */
-void replace_wm();
+/* sosc set gap <0...inf> */
+void set_gap(unsigned int n);
+
+/* sosc split screen <WxH+X+Y> ... */
+typedef struct {
+  unsigned int width, height;
+  int x, y;
+} Split;
+typedef struct {
+  Split *splits;
+  unsigned int num_splits;
+} Splits;
+void split_screen(Splits updated_splits);
 
 /* sosc logout */
 void logout_wm();
-
-/* sosc layout workspace <fullscreen | halved | toggle> */
-typedef enum { LAYOUT_FULLSCREEN, LAYOUT_HALVED, LAYOUT_TOGGLE } LayoutMode;
-void layout_workspace(LayoutMode mode);
-
-/* sosc scale workspace <bigger | smaller | reset> */
-typedef enum { SCALE_BIGGER, SCALE_SMALLER, SCALE_RESET } ScaleMode;
-void scale_workspace(ScaleMode mode);
-
-/* sosc gap <top | bottom | left | right | inner> <n> */
-void gap_top(unsigned int n);
-void gap_bottom(unsigned int n);
-void gap_left(unsigned int n);
-void gap_right(unsigned int n);
-void gap_inner(unsigned int n);
 
 #endif /* !SOSWM_H */

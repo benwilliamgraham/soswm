@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 #include "server.h"
@@ -13,17 +14,15 @@
 
 char usage[] = "usage: sosc [--help] <action> <actor> [argument]\n"
                "commmands: \n"
-               "  sosc push workspace\n"
-               "  sosc pop <window | workspace>\n"
-               "  sosc swap <window | workspace | monitor> <n>\n"
-               "  sosc roll <window | workspace | monitor> <left | right>\n"
-               "  sosc move window <n>\n"
-               "  sosc replace wm\n"
-               "  sosc logout wm\n"
-               "  sosc layout workspace <fullscreen | halved | toggle>\n"
-               "  sosc scale workspace <bigger | smaller | reset>\n"
-               "  sosc gap <top | bottom | left | right | inner> <n>\n"
-               "  sosc --help\n";
+               "sosc push stack\n"
+               "sosc pop <window | stack>\n"
+               "sosc swap <window | stack> <0...inf>\n"
+               "sosc roll <window | stack> <top | bottom>\n"
+               "sosc move window <0...inf>\n"
+               "sosc set gap <0...inf>\n"
+               "sosc split screen <WxH+X+Y> ...\n"
+               "sosc logout wm\n"
+               "sosc --help\n";
 
 int connection_socket;
 
@@ -58,58 +57,9 @@ void server_init() {
 
 void server_quit() { close(connection_socket); }
 
-bool server_has_command() { return false; }
-
-/* Argument parsers */
-const char *uint_parser(unsigned int *res, char *lit) {
-  if (!strcmp("0", lit)) {
-    *res = 0;
-  } else if (*lit == '-' || !(*res = strtoul(lit, NULL, 0))) {
-    return "unsigned integer";
-  }
-  return NULL;
-}
-
-const char *roll_direction_parser(unsigned int *res, char *lit) {
-  if (!strcmp("left", lit)) {
-    *res = ROLL_LEFT;
-  } else if (!strcmp("right", lit)) {
-    *res = ROLL_RIGHT;
-  } else {
-    return "<left | right>";
-  }
-  return NULL;
-}
-
-const char *layout_mode_parser(unsigned int *res, char *lit) {
-  if (!strcmp("fullscreen", lit)) {
-    *res = LAYOUT_FULLSCREEN;
-  } else if (!strcmp("halved", lit)) {
-    *res = LAYOUT_HALVED;
-  } else if (!strcmp("toggle", lit)) {
-    *res = LAYOUT_TOGGLE;
-  } else {
-    return "<fullscreen | halved | toggle>";
-  }
-  return NULL;
-}
-
-const char *scale_mode_parser(unsigned int *res, char *lit) {
-  if (!strcmp("bigger", lit)) {
-    *res = SCALE_BIGGER;
-  } else if (!strcmp("smaller", lit)) {
-    *res = SCALE_SMALLER;
-  } else if (!strcmp("reset", lit)) {
-    *res = SCALE_RESET;
-  } else {
-    return "<bigger | smaller | reset>";
-  }
-  return NULL;
-}
-
 /* Command structure
  *
- * Given that a command is in the form <action> <actor> [argument], create a
+ * Given that a command is in the form <action> <actor> [argument] ..., create a
  * tree of all possible commands and their resulting handlers.
  *
  * Each action (stored as a NULL-terminated list) has a NULL-terminated list of
@@ -117,112 +67,148 @@ const char *scale_mode_parser(unsigned int *res, char *lit) {
  * no argument.
  */
 typedef struct Actor Actor;
-typedef struct Command Command;
-struct Command {
+typedef struct {
   char *action;
   char *usage;
   struct Actor {
     char *actor;
-    union {
-      void (*handler_void)();
-      void (*handler_uint)(unsigned int);
-    };
+    void (*handler)();
   } * actor_options;
-  const char *(*arg_parser)(unsigned int *, char *);
-} commands[] = {
-    {.usage = "sosc push <window | workspace>",
-     .action = "push",
-     .actor_options =
-         (Actor[]){{.actor = "workspace", .handler_void = push_workspace},
-                   {NULL}},
-     .arg_parser = NULL},
+  void (*arg_parser)();
+} Command;
 
-    {.usage = "sosc pop <window | workspace>",
-     .action = "pop",
-     .actor_options =
-         (Actor[]){{.actor = "window", .handler_void = pop_window},
-                   {.actor = "workspace", .handler_void = pop_workspace},
-                   {NULL}},
-     .arg_parser = NULL},
+/* Client communication */
+int data_socket;
+char request[REQ_BUFFER_SIZE];
+char reply[REP_BUFFER_SIZE];
 
-    {.usage = "sosc swap <window | workspace | monitor> <n>",
-     .action = "swap",
-     .actor_options =
-         (Actor[]){{.actor = "window", .handler_uint = swap_window},
-                   {.actor = "workspace", .handler_uint = swap_workspace},
-                   {.actor = "monitor", .handler_uint = swap_monitor},
-                   {NULL}},
-     .arg_parser = uint_parser},
-
-    {.usage = "sosc roll <window | workspace | monitor> <left | right>",
-     .action = "roll",
-     .actor_options =
-         (Actor[]){{.actor = "window", .handler_uint = roll_window},
-                   {.actor = "workspace", .handler_uint = roll_window},
-                   {.actor = "monitor", .handler_uint = roll_window},
-                   {NULL}},
-     .arg_parser = roll_direction_parser},
-
-    {.usage = "sosc move window <n>",
-     .action = "move",
-     .actor_options =
-         (Actor[]){{.actor = "window", .handler_uint = move_window}, {NULL}},
-     .arg_parser = uint_parser},
-
-    /* sosc replace wm */
-    {.action = "replace",
-     .actor_options =
-         (Actor[]){{.actor = "wm", .handler_void = replace_wm}, {NULL}},
-     .arg_parser = NULL},
-
-    /* sosc logout wm */
-    {.action = "logout",
-     .actor_options =
-         (Actor[]){{.actor = "wm", .handler_void = logout_wm}, {NULL}},
-     .arg_parser = NULL},
-
-    /* sosc layout workspace <fullscreen | halved | toggle> */
-    {.action = "layout",
-     .actor_options =
-         (Actor[]){{.actor = "workspace", .handler_uint = layout_workspace},
-                   {NULL}},
-     .arg_parser = layout_mode_parser},
-
-    /* sosc scale workspace <bigger | smaller | reset> */
-    {.action = "scale",
-     .actor_options =
-         (Actor[]){{.actor = "workspace", .handler_uint = scale_workspace},
-                   {NULL}},
-     .arg_parser = scale_mode_parser},
-
-    /* sosc gap <top | bottom | left | right | inner> <n> */
-    {.action = "gap",
-     .actor_options = (Actor[]){{.actor = "top", .handler_uint = gap_top},
-                                {.actor = "bottom", .handler_uint = gap_bottom},
-                                {.actor = "left", .handler_uint = gap_left},
-                                {.actor = "right", .handler_uint = gap_right},
-                                {.actor = "inner", .handler_uint = gap_inner},
-                                {NULL}},
-     .arg_parser = uint_parser},
-    {NULL},
-};
-
-/* Socket read-write macros to eliminate repeated code */
 #define sock_read(socket, dest) read(socket, dest, sizeof(dest) - 1)
 #define sock_writef(socket, dest, ...)                                         \
   write(socket, dest, snprintf(dest, sizeof(dest), __VA_ARGS__) + 1)
 
-void server_exec_commmands() {
+/* Argument parsers */
+void uint_parser(void (*handler)()) {
+  sock_read(data_socket, request);
+  int res;
+  if (!strcmp("0", request)) {
+    res = 0;
+  } else if (*request == '-' || !(res = strtoul(request, NULL, 0))) {
+    sock_writef(data_socket, reply,
+                "Invalid argument: `%s`\nExpected unsigned integer\n", request);
+  }
+  handler(res);
+}
+
+void roll_direction_parser(char *lit, void (*handler)()) {
+  sock_read(data_socket, request);
+  if (!strcmp("top", lit)) {
+    handler(ROLL_TOP);
+  } else if (!strcmp("bottom", lit)) {
+    handler(ROLL_BOTTOM);
+  } else {
+    sock_writef(data_socket, reply,
+                "Invalid argument: `%s`\nExpected `top` or `bottom`\n",
+                request);
+  }
+}
+
+void splits_parser(void (*handler)()) {
+  Splits splits = {
+      .splits = NULL,
+      .num_splits = 0,
+  };
+  for (;;) {
+    sock_read(data_socket, request);
+    if (request[0] == '\0') {
+      break;
+    }
+    Split split;
+    const unsigned int expected = 4;
+    if (sscanf(request, "%ux%u+%d+%d", &split.width, &split.height, &split.x,
+               &split.y) != expected) {
+      if (splits.splits) {
+        free(splits.splits);
+      }
+      sock_writef(data_socket, reply,
+                  "Invalid argument: `%s`\nExpected split in form `WxH+x+y`\n",
+                  request);
+      return;
+    }
+    splits.splits =
+        realloc(splits.splits, sizeof(Split) * (splits.num_splits + 1));
+    splits.splits[splits.num_splits++] = split;
+  }
+  if (!splits.splits) {
+    sock_writef(data_socket, reply,
+                "One or more splits must be specified in form `WxH+x+y`\n");
+    return;
+  }
+  handler(splits);
+}
+
+Command commands[] = {
+    {.usage = "sosc push stack",
+     .action = "push",
+     .actor_options =
+         (Actor[]){{.actor = "stack", .handler = push_stack}, {NULL}},
+     .arg_parser = NULL},
+
+    {.usage = "sosc pop <window | stack>",
+     .action = "pop",
+     .actor_options = (Actor[]){{.actor = "window", .handler = pop_window},
+                                {.actor = "stack", .handler = pop_stack},
+                                {NULL}},
+     .arg_parser = NULL},
+
+    {.usage = "sosc swap <window | stack> <0...inf>",
+     .action = "swap",
+     .actor_options = (Actor[]){{.actor = "window", .handler = swap_window},
+                                {.actor = "stack", .handler = swap_stack},
+                                {NULL}},
+     .arg_parser = uint_parser},
+
+    {.usage = "sosc roll <window | stack> <top | bottom>",
+     .action = "roll",
+     .actor_options = (Actor[]){{.actor = "window", .handler = roll_window},
+                                {.actor = "stack", .handler = roll_stack},
+                                {NULL}},
+     .arg_parser = roll_direction_parser},
+
+    {.usage = "sosc move window <0...inf>",
+     .action = "move",
+     .actor_options =
+         (Actor[]){{.actor = "window", .handler = move_window}, {NULL}},
+     .arg_parser = uint_parser},
+
+    /* sosc set gap <0...inf> */
+    {.usage = "sosc set gap <0...inf>",
+     .action = "set",
+     .actor_options = (Actor[]){{.actor = "gap", .handler = set_gap}, {NULL}},
+     .arg_parser = uint_parser},
+
+    /* sosc split screen <"WxH+X+Y ..."> */
+    {.usage = "sosc split screen <WxH+X+Y> ...",
+     .action = "split",
+     .actor_options =
+         (Actor[]){{.actor = "screen", .handler = split_screen}, {NULL}},
+     .arg_parser = splits_parser},
+
+    /* sosc logout wm */
+    {.usage = "sosc logout wm",
+     .action = "logout",
+     .actor_options = (Actor[]){{.actor = "wm", .handler = logout_wm}, {NULL}},
+     .arg_parser = NULL},
+    {NULL},
+};
+
+void server_exec_commmand() {
   // accept a new connection
-  int data_socket;
   if ((data_socket = accept(connection_socket, NULL, NULL)) == -1) {
     fprintf(stderr, "soswm: Could not accept connection\n");
     exit(1);
   }
 
-  // create buffers, making sure they are null-terminated
-  char request[REQ_BUFFER_SIZE];
-  char reply[REP_BUFFER_SIZE];
+  // make sure buffers are null-terminated
   request[sizeof(request) - 1] = 0;
   reply[sizeof(reply) - 1] = 0;
 
@@ -257,18 +243,9 @@ void server_exec_commmands() {
         // if actor matches, check arg
         if (!strcmp(actor->actor, request)) {
           if (cmd->arg_parser) {
-            sock_read(data_socket, request);
-            unsigned int arg;
-            const char *arg_usage_err = cmd->arg_parser(&arg, request);
-            if (arg_usage_err) {
-              sock_writef(data_socket, reply,
-                          "Invalid arg: `%s`\nExpected: %s\n", request,
-                          arg_usage_err);
-            } else {
-              actor->handler_uint(arg);
-            }
+            cmd->arg_parser(actor->handler);
           } else {
-            actor->handler_void();
+            actor->handler();
           }
           goto clean_up;
         }

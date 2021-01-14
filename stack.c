@@ -27,7 +27,7 @@ void stack_swap(Stack *stack, unsigned int n) {
   }
 }
 
-void stack_roll_left(Stack *stack) {
+void stack_roll_top(Stack *stack) {
   if (stack->num_items > 1) {
     void *tos = stack->items[stack->num_items - 1];
     void **rest_items = stack->items;
@@ -39,7 +39,7 @@ void stack_roll_left(Stack *stack) {
   }
 }
 
-void stack_roll_right(Stack *stack) {
+void stack_roll_bottom(Stack *stack) {
   if (stack->num_items > 1) {
     void *bottom = stack->items[0];
     void **rest_items = stack->items + 1;

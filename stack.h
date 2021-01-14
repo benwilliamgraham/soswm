@@ -24,10 +24,10 @@ void *stack_pop(Stack *stack);
 void stack_swap(Stack *stack, unsigned int n);
 
 /* Move TOS to bottom */
-void stack_roll_left(Stack *stack);
+void stack_roll_top(Stack *stack);
 
 /* Move bottom to TOS */
-void stack_roll_right(Stack *stack);
+void stack_roll_bottom(Stack *stack);
 
 /* Return the item at TOS+n, or NULL if it doesn't exist */
 void *stack_at(Stack *stack, unsigned int n);

@@ -51,7 +51,7 @@ sosc swap <window | stack> <0...inf>
 sosc roll <window | stack> <top | bottom>
 sosc move window <0...inf>
 sosc set gap <0...inf>
-sosc split screen <"WxH+X+Y ...">
+sosc split screen <WxH+X+Y> ...
 sosc logout wm
 sosc --help
 ```

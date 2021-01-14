@@ -1,14 +1,21 @@
 CC = gcc
 CFLAGS = -O3 -Wall -Wextra -pedantic -ansi -std=c11
-LIBS = -lX11 -lXrandr
+LIBS = -lX11
 SERVER = soswm
 CLIENT = sosc
 
-soswm: soswm.c server.c
+soswm: soswm.c server.c stack.c
 	$(CC) $(CFLAGS) $(LIBS) -o $(SERVER) $^
 
 sosc: sosc.c
 	$(CC) $(CFLAGS) $(LIBS) -o $(CLIENT) $^
+
+install: $(SERVER) $(CLIENT)
+	mkdir -p /usr/local/bin
+	cp -f $(SERVER) /usr/local/bin/$(SERVER)
+	cp -f $(CLIENT) /usr/local/bin/$(CLIENT)
+	mkdir -p /usr/share/xsessions
+	cp -f $(SERVER).desktop /usr/share/xsessions/$(SERVER).desktop
 
 format:
 	clang-format -i *.c *.h
