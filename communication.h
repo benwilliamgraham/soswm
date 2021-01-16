@@ -1,7 +1,7 @@
 #ifndef COMMUNICATION_H
 #define COMMUNICATION_H
 
-#define REQ_BUFFER_SIZE 512
+#define REQ_BUFFER_SIZE 64
 #define REP_BUFFER_SIZE 2048
 
 #endif /* !COMMUNICATION_H */

@@ -1,14 +1,14 @@
 CC = gcc
 CFLAGS = -O3 -Wall -Wextra -pedantic -ansi -std=c11
-LIBS = -lX11
+LIBS = -lX11 -lpthread
 SERVER = soswm
 CLIENT = sosc
 
-soswm: soswm.c server.c stack.c
-	$(CC) $(CFLAGS) $(LIBS) -o $(SERVER) $^
+soswm: wm.c server.c communication.h
+	$(CC) $(CFLAGS) $(LIBS) -o $(SERVER) wm.c server.c
 
-sosc: sosc.c
-	$(CC) $(CFLAGS) $(LIBS) -o $(CLIENT) $^
+sosc: client.c communication.h
+	$(CC) $(CFLAGS) $(LIBS) -o $(CLIENT) client.c
 
 install: $(SERVER) $(CLIENT)
 	mkdir -p /usr/local/bin

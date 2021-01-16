@@ -7,7 +7,7 @@ void server_init();
 /* End server */
 void server_quit();
 
-/* Execute next pending commmand */
-void server_exec_commmand();
+/* Host server on separate thread */
+void *server_host(void *);
 
 #endif /* !SERVER_H */

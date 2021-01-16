@@ -1,16 +1,16 @@
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <fcntl.h>
 #include <unistd.h>
 
 #include "server.h"
 
 #include "communication.h"
-#include "soswm.h"
+#include "wm.h"
 
 char usage[] = "usage: sosc [--help] <action> <actor> [argument]\n"
                "commmands: \n"
@@ -99,11 +99,11 @@ void uint_parser(void (*handler)()) {
   handler(res);
 }
 
-void roll_direction_parser(char *lit, void (*handler)()) {
+void roll_direction_parser(void (*handler)()) {
   sock_read(data_socket, request);
-  if (!strcmp("top", lit)) {
+  if (!strcmp("top", request)) {
     handler(ROLL_TOP);
-  } else if (!strcmp("bottom", lit)) {
+  } else if (!strcmp("bottom", request)) {
     handler(ROLL_BOTTOM);
   } else {
     sock_writef(data_socket, reply,
@@ -201,61 +201,69 @@ Command commands[] = {
     {NULL},
 };
 
-void server_exec_commmand() {
-  // accept a new connection
-  if ((data_socket = accept(connection_socket, NULL, NULL)) == -1) {
-    fprintf(stderr, "soswm: Could not accept connection\n");
-    exit(1);
-  }
-
+void *server_host(__attribute__((unused)) void *arg) {
   // make sure buffers are null-terminated
   request[sizeof(request) - 1] = 0;
   reply[sizeof(reply) - 1] = 0;
 
-  // recieve and parse data from client
-  sock_read(data_socket, request);
+  for (;;) {
+    // accept a new connection
+    if ((data_socket = accept(connection_socket, NULL, NULL)) == -1) {
+      fprintf(stderr, "soswm: Could not accept connection\n");
+      exit(1);
+    }
 
-  if (!strcmp("--help", request)) {
-    sock_writef(data_socket, reply, "%s\n", usage);
-    goto clean_up;
-  }
+    // get lock on wm
+    pthread_mutex_lock(&wm_lock);
 
-  for (Command *cmd = commands;; cmd++) {
-    // if the end of the list is reached, return an error
-    if (!cmd->action) {
-      sock_writef(data_socket, reply, "Invalid action: `%s`\nExpected: %s\n",
-                  request, usage);
+    // recieve and parse data from client
+    sock_read(data_socket, request);
+
+    if (!strcmp("--help", request)) {
+      sock_writef(data_socket, reply, "%s\n", usage);
       goto clean_up;
     }
 
-    // if the command matches, check actor + arg
-    if (!strcmp(cmd->action, request)) {
-      sock_read(data_socket, request);
+    for (Command *cmd = commands;; cmd++) {
+      // if the end of the list is reached, return an error
+      if (!cmd->action) {
+        sock_writef(data_socket, reply, "Invalid action: `%s`\nExpected: %s\n",
+                    request, usage);
+        goto clean_up;
+      }
 
-      for (Actor *actor = cmd->actor_options;; actor++) {
-        // if the end of the list is reached, return and error
-        if (!actor->actor) {
-          sock_writef(data_socket, reply, "Invalid actor: `%s`\nExpected: %s\n",
-                      request, cmd->usage);
-          goto clean_up;
-        }
+      // if the command matches, check actor + arg
+      if (!strcmp(cmd->action, request)) {
+        sock_read(data_socket, request);
 
-        // if actor matches, check arg
-        if (!strcmp(actor->actor, request)) {
-          if (cmd->arg_parser) {
-            cmd->arg_parser(actor->handler);
-          } else {
-            actor->handler();
+        for (Actor *actor = cmd->actor_options;; actor++) {
+          // if the end of the list is reached, return and error
+          if (!actor->actor) {
+            sock_writef(data_socket, reply,
+                        "Invalid actor: `%s`\nExpected: %s\n", request,
+                        cmd->usage);
+            goto clean_up;
           }
-          goto clean_up;
+
+          // if actor matches, check arg
+          if (!strcmp(actor->actor, request)) {
+            if (cmd->arg_parser) {
+              cmd->arg_parser(actor->handler);
+            } else {
+              actor->handler();
+            }
+            goto clean_up;
+          }
         }
       }
     }
-  }
 
-clean_up:
-  // make sure everything is written before shutting down
-  shutdown(data_socket, SHUT_WR);
-  sock_read(data_socket, request);
-  close(data_socket);
+  clean_up:
+    // make sure everything is written before shutting down
+    pthread_mutex_unlock(&wm_lock);
+    shutdown(data_socket, SHUT_WR);
+    sock_read(data_socket, request);
+    close(data_socket);
+  }
+  return NULL;
 }
