@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <unistd.h>
 
 /* Global structures */
@@ -15,8 +16,6 @@ Display *dpy;
 Window root;
 
 Atom WM_PROTOCOLS, WM_DELETE_WINDOW;
-
-pthread_mutex_t wm_lock;
 
 typedef struct {
   Window *windows; // ordered windows, stored TOS+n...TOS
@@ -49,16 +48,13 @@ void draw_stack(WinStack stack, Split split) {
     XMapWindow(dpy, win);
     if (split.width > split.height) {
       unsigned int width = split.width / stack.num_windows;
-      XMoveResizeWindow(dpy, win, split.x + w * width + gap / 2,
-                                  split.y + gap / 2,
-                                  width - gap,
-                                  split.height - gap);
+      XMoveResizeWindow(dpy, win, split.x + w * width + gap,
+                        split.y + gap, width - gap * 2, split.height - gap * 2);
     } else {
       unsigned int height = split.height / stack.num_windows;
-      XMoveResizeWindow(dpy, win, split.x + gap / 2,
-                                  split.y + w * height + gap / 2, 
-                                  split.width - gap,
-                                  height - gap);
+      XMoveResizeWindow(dpy, win, split.x + gap,
+                        split.y + w * height + gap, split.width - gap * 2,
+                        height - gap * 2);
     }
   }
   // re-focus top window
@@ -138,13 +134,8 @@ int x_error(Display *dpy, XErrorEvent *err) {
 
 /* Continuously handle X events */
 void x_handler() {
-  for (;;) {
+  while (XPending(dpy)) {
     // check for new X events
-    pthread_mutex_lock(&wm_lock);
-    if (!XPending(dpy)) {
-      pthread_mutex_unlock(&wm_lock);
-      continue;
-    }
     XEvent e;
     XNextEvent(dpy, &e);
     switch (e.type) {
@@ -205,7 +196,6 @@ void x_handler() {
       break;
     }
     }
-    pthread_mutex_unlock(&wm_lock);
   }
 }
 
@@ -218,7 +208,6 @@ int main() {
   root = XDefaultRootWindow(dpy);
   XSetErrorHandler(x_error);
   XSelectInput(dpy, root, SubstructureNotifyMask | SubstructureRedirectMask);
-  XInitThreads();
 
   // set default split
   Screen *scr = XDefaultScreenOfDisplay(dpy);
@@ -238,10 +227,7 @@ int main() {
   WM_DELETE_WINDOW = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
 
   // initialize and run server
-  pthread_t server_thread;
-  pthread_mutex_init(&wm_lock, NULL);
   server_init();
-  pthread_create(&server_thread, NULL, server_host, NULL);
 
   // run startup program
   if (!fork()) {
@@ -253,8 +239,21 @@ int main() {
     exit(1);
   }
 
-  // start X event handler
-  x_handler();
+  // continuously accept from either X or server
+  fd_set set;
+  int x_fd = ConnectionNumber(dpy);
+  for (;;) {
+    FD_ZERO(&set);
+    FD_SET(x_fd, &set);
+    FD_SET(connection_socket, &set);
+    int max_fd = x_fd > connection_socket ? x_fd : connection_socket;
+    // wait for any change, always checking X after
+    select(max_fd + 1, &set, NULL, NULL, NULL);
+    if (FD_ISSET(connection_socket, &set)) {
+      server_handler();
+    }
+    x_handler();
+  }
 
   return 0;
 }
@@ -265,8 +264,8 @@ void push_stack() {
   stack_stack.win_stacks = realloc(
       stack_stack.win_stacks, stack_stack.num_win_stacks * sizeof(WinStack));
   win_stack_at(0) = (WinStack){
-    .windows = NULL,
-    .num_windows = 0,
+      .windows = NULL,
+      .num_windows = 0,
   };
   draw_all();
 }
@@ -397,6 +396,5 @@ void split_screen(Splits updated_split_stack) {
 void logout_wm() {
   XCloseDisplay(dpy);
   server_quit();
-  pthread_mutex_destroy(&wm_lock);
   exit(0);
 }

@@ -1,4 +1,3 @@
-#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -201,69 +200,57 @@ Command commands[] = {
     {NULL},
 };
 
-void *server_host(__attribute__((unused)) void *arg) {
-  // make sure buffers are null-terminated
-  request[sizeof(request) - 1] = 0;
-  reply[sizeof(reply) - 1] = 0;
+void server_handler() {
+  // accept a new connection
+  if ((data_socket = accept(connection_socket, NULL, NULL)) == -1) {
+    fprintf(stderr, "soswm: Could not accept connection\n");
+    exit(1);
+  }
 
-  for (;;) {
-    // accept a new connection
-    if ((data_socket = accept(connection_socket, NULL, NULL)) == -1) {
-      fprintf(stderr, "soswm: Could not accept connection\n");
-      exit(1);
-    }
+  // recieve and parse data from client
+  sock_read(data_socket, request);
 
-    // get lock on wm
-    pthread_mutex_lock(&wm_lock);
+  if (!strcmp("--help", request)) {
+    sock_writef(data_socket, reply, "%s\n", usage);
+    goto clean_up;
+  }
 
-    // recieve and parse data from client
-    sock_read(data_socket, request);
-
-    if (!strcmp("--help", request)) {
-      sock_writef(data_socket, reply, "%s\n", usage);
+  for (Command *cmd = commands;; cmd++) {
+    // if the end of the list is reached, return an error
+    if (!cmd->action) {
+      sock_writef(data_socket, reply, "Invalid action: `%s`\nExpected: %s\n",
+                  request, usage);
       goto clean_up;
     }
 
-    for (Command *cmd = commands;; cmd++) {
-      // if the end of the list is reached, return an error
-      if (!cmd->action) {
-        sock_writef(data_socket, reply, "Invalid action: `%s`\nExpected: %s\n",
-                    request, usage);
-        goto clean_up;
-      }
+    // if the command matches, check actor + arg
+    if (!strcmp(cmd->action, request)) {
+      sock_read(data_socket, request);
 
-      // if the command matches, check actor + arg
-      if (!strcmp(cmd->action, request)) {
-        sock_read(data_socket, request);
+      for (Actor *actor = cmd->actor_options;; actor++) {
+        // if the end of the list is reached, return and error
+        if (!actor->actor) {
+          sock_writef(data_socket, reply, "Invalid actor: `%s`\nExpected: %s\n",
+                      request, cmd->usage);
+          goto clean_up;
+        }
 
-        for (Actor *actor = cmd->actor_options;; actor++) {
-          // if the end of the list is reached, return and error
-          if (!actor->actor) {
-            sock_writef(data_socket, reply,
-                        "Invalid actor: `%s`\nExpected: %s\n", request,
-                        cmd->usage);
-            goto clean_up;
+        // if actor matches, check arg
+        if (!strcmp(actor->actor, request)) {
+          if (cmd->arg_parser) {
+            cmd->arg_parser(actor->handler);
+          } else {
+            actor->handler();
           }
-
-          // if actor matches, check arg
-          if (!strcmp(actor->actor, request)) {
-            if (cmd->arg_parser) {
-              cmd->arg_parser(actor->handler);
-            } else {
-              actor->handler();
-            }
-            goto clean_up;
-          }
+          goto clean_up;
         }
       }
     }
-
-  clean_up:
-    // make sure everything is written before shutting down
-    pthread_mutex_unlock(&wm_lock);
-    shutdown(data_socket, SHUT_WR);
-    sock_read(data_socket, request);
-    close(data_socket);
   }
-  return NULL;
+
+clean_up:
+  // make sure everything is written before shutting down
+  shutdown(data_socket, SHUT_WR);
+  sock_read(data_socket, request);
+  close(data_socket);
 }

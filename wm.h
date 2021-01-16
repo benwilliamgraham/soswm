@@ -1,11 +1,6 @@
 #ifndef SOSWM_H
 #define SOSWM_H
 
-#include <pthread.h>
-
-/* Must lock this to use any of the following functions */
-extern pthread_mutex_t wm_lock;
-
 /* sosc push stack */
 void push_stack();
 

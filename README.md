@@ -68,7 +68,7 @@ They perform the following functions:
 * `sosc roll stack top`: Take the TOS stack and move it to BOS
 * `sosc roll stack bottom`: Take the BOS stack and move it to TOS
 * `sosc move window <n>`: Move the TOS window to the TOS+n stack
-* `sosc set gap <n>`: Set the gap between windows in a stack to n pixels
+* `sosc set gap <n>`: Set the gap around a window to n pixels
 * `sosc split screen <splits>`: Split the window into descending monitors described by the space-separated pattern `"<width>x<height>+<x-offset>+<y-offset> ..."`
 * `sosc logout wm`: Exit the window manager
 * `sosc --help`: Display the help message

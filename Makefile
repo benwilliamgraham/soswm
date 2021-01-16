@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -O3 -Wall -Wextra -pedantic -ansi -std=c11
-LIBS = -lX11 -lpthread
+LIBS = -lX11
 SERVER = soswm
 CLIENT = sosc
 
