@@ -1,22 +1,21 @@
 CC = gcc
-CFLAGS = -O3 -Wall
-LIBS = -lX11 -lXrandr
-TARGET = soswm
+CFLAGS = -O3 -Wall -Wextra -pedantic -ansi -std=c11
+LIBS = -lX11
+SERVER = soswm
+CLIENT = sosc
 
-soswm: soswm.c config.c
-	$(CC) $(CFLAGS) $(LIBS) -o $(TARGET) $^
+soswm: wm.c server.c communication.h
+	$(CC) $(CFLAGS) $(LIBS) -o $(SERVER) wm.c server.c
 
-install: $(TARGET)
+sosc: client.c communication.h
+	$(CC) $(CFLAGS) $(LIBS) -o $(CLIENT) client.c
+
+install: $(SERVER) $(CLIENT)
 	mkdir -p /usr/local/bin
-	cp -f $(TARGET) /usr/local/bin/$(TARGET)
+	cp -f $(SERVER) /usr/local/bin/$(SERVER)
+	cp -f $(CLIENT) /usr/local/bin/$(CLIENT)
 	mkdir -p /usr/share/xsessions
-	cp -f $(TARGET).desktop /usr/share/xsessions/$(TARGET).desktop
-
-uninstall:
-	-rm /usr/local/bin/$(TARGET)
-
-clean:
-	-rm $(TARGET)
+	cp -f $(SERVER).desktop /usr/share/xsessions/$(SERVER).desktop
 
 format:
 	clang-format -i *.c *.h

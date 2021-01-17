@@ -2,83 +2,80 @@
 
 ## The stack-of-stacks window manager.
 
-soswm is a small and fast dynamic window manager.
+soswm is a small dynamic window manager built around stacks.
 
 ## Installation
 
-First, create a `config.c` file. The included `example.config.c` can be used as
-a template.
+After cloning the repository, running `[sudo] make install` will compile and install soswm as well as adding it's desktop image.
 
-Next, run `[sudo] make clean install` to clean, compile, and install soswm.
+Next, a startup script can be added to `~/.config/soswm/startup`.
+When present, this script will be run during soswm's startup process and can be used to apply settings and launch other programs.
+
+Finally, an X hotkey program (such as `sxhkd` or `xbindkeys`) can be used to add keybindings for soswm.
 
 ## Functionality
 
 As the name suggests, soswm is built around stacks.
 
-Rather than having named workspaces, soswm uses a stack of workspaces, with the
-active workspace as the TOS (top-of-stack). Each workspace contains a stack of
-windows, with the active window as the TOS. Furthermore, being a dynamic window
-manager, soswm chooses the location of all windows and keeps the active
-workspace and window in the same location for maximum efficiency. Rather than
-moving between windows/workspaces, the active window and workspaces revolve
-around you.
-
-Both the window and workspace stack supports several operations to reorder the
-stack:
-
-* Push: Add a new item onto TOS
-* Pop: Remove an item from TOS 
-* Swap(n): Swap the positions of the items at TOS and TOS+n
-* Roll left: Take the item at TOS and move it to the bottom of the stack
-* Roll right: Take the item at the bottom of the stack and move it to TOS
+The stack behaves as expected, with a few helpful extra features.
+Stacks can be manipulation as follows:
+* Push: Add a new item onto TOS (top of stack)
+* Pop: Remove an item from TOS
+* Swap(n): Swap the position of the items at TOS and TOS+n
+* Roll top: Take the TOS item and move it to BOS (bottom of stack)
+* Roll bottom: Take the BOS item and move it to TOS
 * Move: Take the TOS item from one stack and put it at the TOS of another
 
-Monitors are also stored on a stack that can be similarly manipulated to change
-each one's precedence.
+The inner stacks in soswm are the stacks of windows.
+The window stack can be manipulated by all of the aformentioned functions, with pushing being indirectly done through the creation of a new X window, and popping occuring by killing an X window (either in-app or through the wm).
 
-Workspaces have further functionality to handle the way in which windows are
-drawn. A fullscreen in which only the active window for the given workspace can
-be enabled. Also, for cases where there are more than one window in a workspace,
-the windows will be drawn with the active window to the left, and each
-successive window taking up a ratio of the remaining screen space. This ratio
-can be adjusted by 'shrinking' or 'growing' a workspace, with the default value
-existing in the configuration. Finally, the gaps between windows can be changed.
+The outer layer of stacks is the stack of window stacks.
+This stack can be manipulated in all of the ways mentioned with exception of moving between stacks. 
 
-## Configuration
+The active window is the TOS of the TOS stack from the stack-of-stacks.
 
-The file `config.c` contains the ability to configure the default programs,
-keybinds and graphical settings for soswm. Edit the file and re-install. 
+There is a immutable stack of "monitors" created by splitting up the screen.
+The window stacks are drawn in order on these "monitors", with any extra stacks being hidden.
 
-The following functions are made availible for keybinds:
+Users can interact with soswm through the sosc (stack-of-stacks client) application.
+It sends commands over Unix domain sockets to the window manager.
 
-* `window_push`: Push a window with the given command of type `char **`
-* `window_pop`: Pop the TOS window
-* `window_swap`: Swap window at TOS with TOS+n given n of type `unsigned int`
-* `window_roll_l`: Roll the window stack left
-* `window_roll_r`: Roll the window stack right
-* `window_move`: Move TOS window to workspace TOS+n given n of type `unsigned
-int`, or into a new workspace if n is 0
-* `workspace_push`: Push a new workspace
-* `workspace_pop`: Pop the TOS workspace if it is empty
-* `workspace_swap`: Swap workspace at TOS with TOS+n given n of type `unsigned
-int`
-* `workspace_roll_l`: Roll the workspace stack left
-* `workspace_roll_r`: Roll the workspace stack right
-* `workspace_fullscreen`: Toggle if a workspace is fullscreen
-* `workspace_shrink`: Decrease the ratios between successive windows
-* `workspace_grow`: Increase the ratios between successive windows
-* `mon_swap`: Swap monitor at TOS with TOS+n given n of type `unsigned int`
-* `mon_roll_l`: Roll the monitor stack left
-* `mon_roll_r`: Roll the monitor stack right
-* `wm_refresh`: Refresh the window manager's display and monitor information (this can be used when the number/orientation of monitors has changed)
-* `wm_replace`: Destroy the current instance of the window manager, starting a new one (this can be used to update the configuration without destroying the existing windows)
-* `wm_logout`: Exit the window manager
+Commands exist in the form `sosc <action> <actor> [argument]`.
 
-The macros `INT_ARG` and `PROG_ARG` can be used for arguments of type `unsigned int` and `char **` respectively.
+All existing command patterns are as follows:
 
-The following cosmetic variables are also editable at runtime:
-* `outer_gap`: The number of pixels between a window and the edge of the screen
-* `inner_gap`: The number of pixels between two adjacent windows
-* `default_win_ratio`: The initial split ratio between two windows in a new workspace
+```
+sosc push stack
+sosc pop <window | stack>
+sosc swap <window | stack> <0...inf>
+sosc roll <window | stack> <top | bottom>
+sosc move window <0...inf>
+sosc set gap <0...inf>
+sosc split screen <WxH+X+Y> ...
+sosc logout wm
+sosc --help
+```
 
-A custom routine to be run upon starting soswm can be modified in the function `startup`.
+They perform the following functions:
+
+* `sosc push stack`: Push a new empty stack to the top of the sos
+* `sosc pop window`: Pop the TOS window by sending a kill command
+* `sosc pop stack`: Pop the TOS stack if empty
+* `sosc swap window <n>`: Swap the TOS window and the window at TOS+n
+* `sosc swap stack <n>`: Swap the TOS stack and the stack at TOS+n
+* `sosc roll window top`: Take the TOS window and move it to BOS
+* `sosc roll window bottom`: Take the BOS window and move it to TOS
+* `sosc roll stack top`: Take the TOS stack and move it to BOS
+* `sosc roll stack bottom`: Take the BOS stack and move it to TOS
+* `sosc move window <n>`: Move the TOS window to the TOS+n stack
+* `sosc set gap <n>`: Set the gap around a window to n pixels
+* `sosc split screen <splits>`: Split the window into descending monitors described by the space-separated pattern `"<width>x<height>+<x-offset>+<y-offset> ..."`
+* `sosc logout wm`: Exit the window manager
+* `sosc --help`: Display the help message
+
+## Acknowledgements:
+
+Thanks to the following window managers for inspiration:
+* dwm
+* bspwm
+* basic_wm
