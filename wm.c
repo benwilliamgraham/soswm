@@ -48,23 +48,22 @@ void draw_stack(WinStack stack, Split split) {
     XMapWindow(dpy, win);
     if (split.width > split.height) {
       unsigned int width = split.width / stack.num_windows;
-      XMoveResizeWindow(dpy, win, split.x + w * width + gap,
-                        split.y + gap, width - gap * 2, split.height - gap * 2);
+      XMoveResizeWindow(dpy, win, split.x + w * width + gap, split.y + gap,
+                        width - gap * 2, split.height - gap * 2);
     } else {
       unsigned int height = split.height / stack.num_windows;
-      XMoveResizeWindow(dpy, win, split.x + gap,
-                        split.y + w * height + gap, split.width - gap * 2,
-                        height - gap * 2);
+      XMoveResizeWindow(dpy, win, split.x + gap, split.y + w * height + gap,
+                        split.width - gap * 2, height - gap * 2);
     }
   }
-  // re-focus top window
+  // make sure TOS window remains the focus
   WinStack tos = win_stack_at(0);
   if (tos.num_windows) {
     Window win = window_at(tos, 0);
     XRaiseWindow(dpy, win);
-    XSetInputFocus(dpy, win, RevertToParent, CurrentTime);
+    XSetInputFocus(dpy, win, RevertToPointerRoot, CurrentTime);
   } else {
-    XSetInputFocus(dpy, root, RevertToParent, CurrentTime);
+    XSetInputFocus(dpy, PointerRoot, RevertToPointerRoot, CurrentTime);
   }
 }
 
@@ -271,29 +270,34 @@ void push_stack() {
 }
 
 void pop_window() {
-  if (stack_stack.num_win_stacks && win_stack_at(0).num_windows) {
-    Window win = window_at(win_stack_at(0), 0);
-    int n;
-    Atom *protos;
-    // first, try to tell the window to close
-    if (XGetWMProtocols(dpy, win, &protos, &n)) {
-      while (n--) {
-        if (protos[n] == WM_DELETE_WINDOW) {
-          const int LONG_SIZE = 32;
-          XEvent e = {.type = ClientMessage};
-          e.xclient = (XClientMessageEvent){.window = win,
-                                            .message_type = WM_PROTOCOLS,
-                                            .format = LONG_SIZE,
-                                            .data = {.l[0] = WM_DELETE_WINDOW}};
-          XSendEvent(dpy, win, False, NoEventMask, &e);
-          goto clean_up;
+  if (stack_stack.num_win_stacks) {
+    WinStack tos = win_stack_at(0);
+    if (tos.num_windows) {
+      Window win = window_at(tos, 0);
+      int n;
+      Atom *protos;
+      // first, try to tell the window to close
+      if (XGetWMProtocols(dpy, win, &protos, &n)) {
+        while (n--) {
+          if (protos[n] == WM_DELETE_WINDOW) {
+            const int LONG_SIZE = 32;
+            XEvent e;
+            e.xclient = (XClientMessageEvent){
+              .type = ClientMessage,
+              .window = win,
+              .message_type = WM_PROTOCOLS,
+              .format = LONG_SIZE,
+              .data = {.l[0] = WM_DELETE_WINDOW}};
+            XSendEvent(dpy, win, False, NoEventMask, &e);
+            XFree(protos);
+            return;
+          }
         }
+        XFree(protos);
       }
+      // if the client has no deletion protocol, forcefully kill it
+      XKillClient(dpy, win);
     }
-    // if the client has no deletion protocol, forcefully kill it
-    XKillClient(dpy, win);
-  clean_up:
-    XFree(protos);
   }
 }
 
